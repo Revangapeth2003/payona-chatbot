@@ -1,14 +1,16 @@
+// Frontend types that match the backend structure
 export interface Message {
-  _id?: string;
+  _id: string;
   text: string;
-  sender: 'bot' | 'user';
-  timestamp?: string;
+  sender: 'user' | 'bot';
   sessionId?: string;
-  userId?: string;
+  timestamp?: string; // Fixed: Changed from Date to string to match backend
+  step?: number;
 }
 
 export interface User {
   _id?: string;
+  sessionEmail?: string;
   name: string;
   age: number;
   email: string;
@@ -18,33 +20,56 @@ export interface User {
   pgField?: string;
   scholarshipInterest?: string;
   passport?: 'Yes' | 'No';
-  resume?: string; // Fixed: changed from string | null to string | undefined
+  resume?: string;
   experienceYears?: string;
   interestedInCategories?: string;
   germanLanguage?: string;
   ugMajor?: string;
   workExperience?: string;
   germanLanguageUG?: string;
-  examReadiness?: string;
-  ugProgramContinue?: string;
-  ugProgramStartTime?: string;
   continueProgram?: string;
   programStartTime?: string;
   currentFlow?: string;
-  programType?: string;
-  appointmentType?: string;
-  appointmentTime?: string;
-  appointmentDate?: string;
-  appointmentConfirmed?: boolean;
-  needsFinancialSetup?: boolean;
-  financialJobSupport?: string;
-  emailSent?: boolean;
-  ugEmailSent?: boolean;
-  sessionId?: string;
   conversationStep?: number;
-  isActive?: boolean;
-  createdAt?: string;
-  updatedAt?: string;
+  sessionId?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface EmailData {
+  name: string;
+  age: string;
+  email: string;
+  purpose?: string;
+  qualification?: string;
+  ugMajor?: string;
+  workExperience?: string;
+  experienceYears?: string;
+  germanLanguageUG?: string;
+  passport?: string;
+  resume?: string;
+  experience?: string;
+  interestedInCategories?: string;
+  germanLanguage?: string;
+  programType?: string;
+  userEmail?: string;
+  preferredCountry?: string;
+}
+
+export interface MeetingData {
+  name: string;
+  email: string;
+  date: string;
+  time: string;
+  timeSlot: string;
+}
+
+export interface ApiResponse<T = any> {
+  success: boolean;
+  message?: string;
+  data?: T;
+  error?: string;
+  count?: number;
 }
 
 export interface ConversationState {
@@ -54,7 +79,7 @@ export interface ConversationState {
   email: string;
   purpose: string;
   passport: string;
-  resume: string | null; // Keep as null in state but convert when saving
+  resume: string | null;
   qualification: string;
   ugMajor: string;
   workExperience: string;
@@ -83,31 +108,4 @@ export interface ConversationState {
   preferredCountry: string;
   pgField: string;
   scholarshipInterest: string;
-}
-
-export interface EmailData {
-  name: string;
-  age: string;
-  email: string;
-  purpose?: string;
-  qualification: string;
-  programType?: string;
-  userEmail?: string;
-  [key: string]: any;
-}
-
-export interface MeetingData {
-  name: string;
-  email: string;
-  date: string;
-  time: string;
-  timeSlot: string;
-}
-
-export interface ApiResponse<T = any> {
-  success: boolean;
-  message?: string;
-  data?: T;
-  error?: string;
-  count?: number;
 }

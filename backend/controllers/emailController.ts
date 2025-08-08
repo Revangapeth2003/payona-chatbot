@@ -1,8 +1,9 @@
 import { Request, Response } from 'express';
 import nodemailer from 'nodemailer';
+import { EmailData, ApiResponse } from '../types';
 
-// Create the transporter at the module level so it's accessible to all functions
-const transporter = nodemailer.createTransport({  // Fixed: createTransport (not createTransporter)
+// Create the transporter
+const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER,
@@ -10,29 +11,9 @@ const transporter = nodemailer.createTransport({  // Fixed: createTransport (not
   }
 });
 
-// Add interface for type safety
-interface EmailData {
-  name: string;
-  age: string;
-  email: string;
-  qualification?: string;
-  ugMajor?: string;
-  workExperience?: string;
-  experienceYears?: string;
-  germanLanguageUG?: string;
-  purpose?: string;
-  passport?: string;
-  resume?: string;
-  experience?: string;
-  interestedInCategories?: string;
-  germanLanguage?: string;
-  programType?: string;
-  userEmail?: string;
-}
-
 export const sendUGProgramEmail = async (req: Request, res: Response) => {
   try {
-    const emailData: EmailData = req.body; // Fixed: Properly typed req.body
+    const emailData: EmailData = req.body;
     
     const mailOptions = {
       from: process.env.EMAIL_USER,
@@ -52,22 +33,27 @@ export const sendUGProgramEmail = async (req: Request, res: Response) => {
       `
     };
 
-    await transporter.sendMail(mailOptions); // Fixed: transporter is now in scope
+    await transporter.sendMail(mailOptions);
     
-    res.json({ 
-      success: true, 
+    const response: ApiResponse = {
+      success: true,
       message: 'UG Program email sent successfully',
       data: { timestamp: new Date().toISOString(), email: emailData.email }
-    });
+    };
+    
+    res.json(response);
   } catch (error) {
     console.error('Error sending UG program email:', error);
-    res.status(500).json({ success: false, message: 'Failed to send email' });
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to send email' 
+    });
   }
 };
 
 export const sendGermanProgramEmail = async (req: Request, res: Response) => {
   try {
-    const emailData: EmailData = req.body; // Fixed: Properly typed req.body
+    const emailData: EmailData = req.body;
     
     const mailOptions = {
       from: process.env.EMAIL_USER,
@@ -89,23 +75,27 @@ export const sendGermanProgramEmail = async (req: Request, res: Response) => {
       `
     };
 
-    await transporter.sendMail(mailOptions); // Fixed: transporter is now in scope
+    await transporter.sendMail(mailOptions);
     
-    res.json({ 
-      success: true, 
+    const response: ApiResponse = {
+      success: true,
       message: 'German Program email sent successfully',
       data: { timestamp: new Date().toISOString(), email: emailData.email }
-    });
+    };
+    
+    res.json(response);
   } catch (error) {
     console.error('Error sending German program email:', error);
-    res.status(500).json({ success: false, message: 'Failed to send email' });
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to send email' 
+    });
   }
 };
 
-// Add the missing confirmation email function
-export const sendConfirmationEmailToUser = async (req: Request, res: Response) => {
+export const sendConfirmationEmail = async (req: Request, res: Response) => {
   try {
-    const { name, email, programType }: EmailData = req.body; // Fixed: Properly destructured and typed
+    const { name, email, programType }: EmailData = req.body;
     
     const mailOptions = {
       from: process.env.EMAIL_USER,
@@ -137,13 +127,18 @@ export const sendConfirmationEmailToUser = async (req: Request, res: Response) =
 
     await transporter.sendMail(mailOptions);
     
-    res.json({ 
-      success: true, 
+    const response: ApiResponse = {
+      success: true,
       message: 'Confirmation email sent to user',
       data: { timestamp: new Date().toISOString(), email }
-    });
+    };
+    
+    res.json(response);
   } catch (error) {
     console.error('Error sending confirmation email to user:', error);
-    res.status(500).json({ success: false, message: 'Failed to send confirmation email' });
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to send confirmation email' 
+    });
   }
 };

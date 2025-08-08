@@ -4,11 +4,7 @@ const connectDB = async (): Promise<void> => {
   try {
     const mongoURI = process.env.MONGO_URI || 'mongodb://localhost:27017/payona-chatbot';
     
-    const options = {
-      // Remove deprecated options, these are now defaults in Mongoose 6+
-    };
-    
-    await mongoose.connect(mongoURI, options);
+    await mongoose.connect(mongoURI);
     
     console.log('✅ MongoDB connected successfully');
     

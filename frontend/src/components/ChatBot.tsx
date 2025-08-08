@@ -73,7 +73,7 @@ const ChatBot: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  // Updated initialization - always start fresh with welcome message
+  // Fixed initialization - always start fresh with welcome message
   useEffect(() => {
     // Clear any existing messages and start fresh
     setMessages([]);
@@ -122,37 +122,57 @@ const ChatBot: React.FC = () => {
         sender: 'bot',
         sessionId
       }).then((msg) => {
-        if (msg) setMessages([msg]);
-      }).catch(() => {
-        // Fallback to local state if backend is not available
-        setMessages([
-          { 
-            text: "Hi welcome to Payana Overseas! How can I assist you today?", 
-            sender: 'bot',
+        if (msg) {
+          console.log('Welcome message saved:', msg);
+          setMessages([msg]);
+        } else {
+          // Fixed: Use string timestamp instead of Date object
+          const fallbackMsg: Message = {
             _id: Date.now().toString(),
-            sessionId
-          }
-        ]);
+            text: "Hi welcome to Payana Overseas! How can I assist you today?",
+            sender: 'bot',
+            sessionId,
+            timestamp: new Date().toISOString() // Fixed: Convert Date to ISO string
+          };
+          setMessages([fallbackMsg]);
+        }
+      }).catch((error) => {
+        console.error('Error posting welcome message:', error);
+        // Fixed: Use string timestamp instead of Date object
+        const fallbackMsg: Message = {
+          _id: Date.now().toString(),
+          text: "Hi welcome to Payana Overseas! How can I assist you today?",
+          sender: 'bot',
+          sessionId,
+          timestamp: new Date().toISOString() // Fixed: Convert Date to ISO string
+        };
+        setMessages([fallbackMsg]);
       });
     }, 100);
   }, [sessionId]);
 
-  // Fixed addMessage function with backend integration
+  // Fixed addMessage function with proper timestamp handling
   const addMessage = useCallback(async (text: string, sender: 'bot' | 'user'): Promise<Message | undefined> => {
     try {
+      console.log(`Adding ${sender} message:`, text);
+      
       const saved = await postMessage({ text, sender, sessionId });
       if (saved) {
+        console.log('Message saved successfully:', saved);
         setMessages(prev => [...prev, saved]);
         return saved;
+      } else {
+        throw new Error('No response from server');
       }
     } catch (err) {
       console.error('Error saving message: ', err);
-      // Fallback to local state
+      // Fixed: Use string timestamp instead of Date object
       const localMessage: Message = { 
+        _id: Date.now().toString(),
         text, 
         sender, 
-        _id: Date.now().toString(),
-        sessionId 
+        sessionId,
+        timestamp: new Date().toISOString() // Fixed: Convert Date to ISO string
       };
       setMessages(prev => [...prev, localMessage]);
       return localMessage;
@@ -225,6 +245,8 @@ const ChatBot: React.FC = () => {
   // Save user data to database - FIXED TYPE COMPATIBILITY
   const saveUserData = useCallback(async (): Promise<void> => {
     try {
+      console.log('Saving user data with sessionId:', sessionId);
+      
       const userData = {
         name: conversationState.name,
         age: parseInt(conversationState.age),
@@ -235,7 +257,7 @@ const ChatBot: React.FC = () => {
         pgField: conversationState.pgField,
         scholarshipInterest: conversationState.scholarshipInterest,
         passport: conversationState.passport as 'Yes' | 'No',
-        resume: conversationState.resume || undefined, // FIXED: Convert null to undefined
+        resume: conversationState.resume || undefined,
         experienceYears: conversationState.experienceYears,
         interestedInCategories: conversationState.interestedInCategories,
         germanLanguage: conversationState.germanLanguage,
@@ -249,30 +271,38 @@ const ChatBot: React.FC = () => {
         sessionId: sessionId
       };
 
+      console.log('Prepared user data:', userData);
       const result = await saveUser(userData);
-      console.log('User saved:', result);
+      console.log('User saved successfully:', result);
     } catch (error) {
       console.error('Error saving user data:', error);
+      // Continue with the flow even if saving fails
     }
   }, [conversationState, sessionId]);
 
-  // Fixed UG Program Email function
+  // Fixed UG Program Email function with better error handling
   const sendUGProgramEmailHandler = useCallback(async (emailData: EmailData): Promise<boolean> => {
     try {
       await addMessage("📧 Sending your program details to our team...", 'bot');
       
+      console.log('Sending UG program email with data:', emailData);
       const result = await sendUGProgramEmail(emailData);
+      console.log('UG program email result:', result);
       
       if (result.success) {
-        console.log('✅ Program email sent successfully:', result);
-        
         await addMessage("✅ Great! Your details have been sent to our team. You'll receive a confirmation email shortly!", 'bot');
         
         // Send confirmation email to user
-        await sendConfirmationEmail({
-          ...emailData,
-          userEmail: emailData.email
-        });
+        try {
+          await sendConfirmationEmail({
+            ...emailData,
+            userEmail: emailData.email,
+            programType: emailData.programType || 'Study Program'
+          });
+          console.log('Confirmation email sent successfully');
+        } catch (confirmError) {
+          console.error('Error sending confirmation email:', confirmError);
+        }
         
         setTimeout(() => {
           if (result.data?.timestamp) {
@@ -288,7 +318,7 @@ const ChatBot: React.FC = () => {
       
     } catch (error) {
       console.error('❌ Error sending program email:', error);
-      await addMessage("Our team will contact you soon to discuss your program details.", 'bot');
+      await addMessage("❌ There was an issue sending the email, but our team will contact you soon to discuss your program details.", 'bot');
       return false;
     }
   }, [addMessage]);
@@ -298,18 +328,24 @@ const ChatBot: React.FC = () => {
     try {
       await addMessage("📧 Sending your German Program details to our team...", 'bot');
       
+      console.log('Sending German program email with data:', emailData);
       const result = await sendGermanProgramEmail(emailData);
+      console.log('German program email result:', result);
       
       if (result.success) {
-        console.log('✅ German Program email sent successfully:', result);
-        
         await addMessage("✅ Great! Your details have been sent to our team. You'll receive a confirmation email shortly!", 'bot');
         
         // Send confirmation email to user
-        await sendConfirmationEmail({
-          ...emailData,
-          userEmail: emailData.email
-        });
+        try {
+          await sendConfirmationEmail({
+            ...emailData,
+            userEmail: emailData.email,
+            programType: emailData.programType || 'German Program'
+          });
+          console.log('Confirmation email sent successfully');
+        } catch (confirmError) {
+          console.error('Error sending confirmation email:', confirmError);
+        }
         
         setTimeout(() => {
           if (result.data?.timestamp) {
@@ -325,7 +361,7 @@ const ChatBot: React.FC = () => {
       
     } catch (error) {
       console.error('❌ Error sending German Program email:', error);
-      await addMessage("Our team will contact you soon to discuss your German program details.", 'bot');
+      await addMessage("❌ There was an issue sending the email, but our team will contact you soon to discuss your German program details.", 'bot');
       return false;
     }
   }, [addMessage]);
@@ -335,11 +371,11 @@ const ChatBot: React.FC = () => {
     try {
       await addMessage("📅 Scheduling your Google Meet appointment...", 'bot');
       
+      console.log('Scheduling meeting with data:', meetingData);
       const result = await scheduleMeeting(meetingData);
+      console.log('Meeting scheduling result:', result);
       
       if (result.success) {
-        console.log('✅ Meeting scheduled successfully:', result);
-        
         await addMessage(`✅ Meeting scheduled successfully!`, 'bot');
         
         setTimeout(() => {
@@ -349,6 +385,7 @@ const ChatBot: React.FC = () => {
                 <h4 style="color: #1976d2; margin: 0 0 10px 0;">📅 Meeting Details</h4>
                 <p style="margin: 5px 0;"><strong>📧 Google Meet link sent to:</strong> ${result.data.email}</p>
                 <p style="margin: 5px 0;"><strong>📅 Date:</strong> ${result.data.date}</p>
+                <p style="margin: 5px 0;"><strong>⏰ Time:</strong> ${result.data.timeSlot}</p>
                 <p style="margin: 5px 0;"><strong>🔗 Meeting Link:</strong> <a href="${result.data.meetLink}" target="_blank">${result.data.meetLink}</a></p>
                 <p style="margin: 10px 0 0 0; color: #666;">Please check your email for the meeting link!</p>
               </div>
@@ -364,7 +401,7 @@ const ChatBot: React.FC = () => {
       
     } catch (error) {
       console.error('❌ Error scheduling meeting:', error);
-      await addMessage("Our team will contact you to arrange the meeting.", 'bot');
+      await addMessage("❌ There was an issue scheduling the meeting, but our team will contact you to arrange the meeting.", 'bot');
       return null;
     }
   }, [addMessage]);
@@ -664,7 +701,11 @@ const ChatBot: React.FC = () => {
               <div dangerouslySetInnerHTML={{ __html: message.text }} />
             </div>
             <div className="message-time">
-              {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {/* Fixed: Handle both string and undefined timestamps */}
+              {message.timestamp 
+                ? new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              }
             </div>
           </div>
         ))}
