@@ -13,27 +13,13 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "removeComments": true,
-    "noImplicitAny": true,
-    "strictNullChecks": true,
-    "strictFunctionTypes": true,
-    "noImplicitThis": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-    "moduleResolution": "node",
-    "allowSyntheticDefaultImports": true,
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": true
+    "types": ["node"]
   },
   "include": [
-    "./**/*.ts",         // Include all .ts files in current directory and subdirectories
-    "routes/**/*.ts",    // Explicitly include routes
-    "models/**/*.ts"     // Explicitly include models
+    "**/*.ts"
   ],
   "exclude": [
     "node_modules",
-    "dist",
-    "**/*.test.ts",
-    "**/*.spec.ts"
+    "dist"
   ]
 }
