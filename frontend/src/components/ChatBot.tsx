@@ -1,18 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import socketService, { Message, MessageData, ConversationState, TypingStatus } from '../services/socketService';
+import socketService, { Message, MessageData, ConversationState, TypingStatus, ChatOption, ProcessingStatus } from '../services/socketService';
 import './ChatBot.css';
-
-interface ChatOption {
-  text: string;
-  value: string;
-  icon?: string;
-  className?: string;
-}
-
-interface ProcessingStatus {
-  isProcessing: boolean;
-  message: string;
-}
 
 interface ChatBotProps {
   userId?: string;
@@ -102,20 +90,19 @@ const ChatBot: React.FC<ChatBotProps> = ({
       }
     });
 
-    // Listen for options to show
-    const socket_raw = socketService.socket;
-    if (socket_raw) {
-      socket_raw.on('show-options', (options: ChatOption[]) => {
+    // FIXED: Access to socket.on for custom events
+    if (socketService.socket) {
+      socketService.socket.on('show-options', (options: ChatOption[]) => {
         console.log('📋 PayanaOverseas: Show options:', options);
         setShowOptions(options);
       });
 
-      socket_raw.on('processing-status', (status: ProcessingStatus) => {
+      socketService.socket.on('processing-status', (status: ProcessingStatus) => {
         console.log('⚙️ PayanaOverseas: Processing status:', status);
         setProcessingStatus(status);
       });
 
-      socket_raw.on('trigger-file-upload', () => {
+      socketService.socket.on('trigger-file-upload', () => {
         console.log('📁 PayanaOverseas: Trigger file upload');
         triggerFileInput();
       });
@@ -145,13 +132,13 @@ const ChatBot: React.FC<ChatBotProps> = ({
     const messageData: MessageData = {
       conversationId,
       message: inputMessage.trim(),
-      sender: 'user',
+      sender: 'user',  // ← FIXED: Added sender field
       timestamp: new Date().toISOString()
     };
 
     socketService.sendMessage(messageData);
     setInputMessage('');
-    setShowOptions([]); // Clear options when user sends message
+    setShowOptions([]);
     
     if (isTyping) {
       socketService.stopTyping(conversationId, userId);
@@ -167,16 +154,15 @@ const ChatBot: React.FC<ChatBotProps> = ({
   const handleOptionClick = useCallback((option: ChatOption) => {
     if (!socketService.connected) return;
 
-    // Send option selection to server
-    const socket_raw = socketService.socket;
-    if (socket_raw) {
-      socket_raw.emit('select-option', { 
+    // FIXED: Access to socket.emit for custom events
+    if (socketService.socket) {
+      socketService.socket.emit('select-option', { 
         option: option.value, 
-        step: conversationState?.conversationFlow?.step || 0 
+        step: conversationState?.conversationFlow?.step || 0  // ← FIXED: Added conversationFlow
       });
     }
 
-    setShowOptions([]); // Clear options after selection
+    setShowOptions([]);
   }, [conversationState]);
 
   const triggerFileInput = useCallback(() => {
@@ -188,12 +174,11 @@ const ChatBot: React.FC<ChatBotProps> = ({
     if (file && socketService.connected) {
       const fileName = file.name;
       
-      // Convert file to base64 for transmission (simplified)
       const reader = new FileReader();
       reader.onload = () => {
-        const socket_raw = socketService.socket;
-        if (socket_raw) {
-          socket_raw.emit('upload-file', {
+        // FIXED: Access to socket.emit for custom events
+        if (socketService.socket) {
+          socketService.socket.emit('upload-file', {
             fileName: fileName,
             fileData: reader.result as string
           });
@@ -238,10 +223,6 @@ const ChatBot: React.FC<ChatBotProps> = ({
     return "Type your message...";
   };
 
-  const formatTimestamp = (timestamp: string): string => {
-    return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
-
   return (
     <div className="chat-container">
       {/* Header */}
@@ -264,7 +245,7 @@ const ChatBot: React.FC<ChatBotProps> = ({
         {messages.map((message, index) => (
           <div 
             key={`${message.id}-${index}`}
-            className={`message ${message.sender === 'user' ? 'user-message' : 'bot-message'}`}
+            className={`message ${message.sender === 'user' ? 'user-message' : 'bot-message'}`}  // ← FIXED: Use sender field
             dangerouslySetInnerHTML={{ __html: message.text }}
           />
         ))}
