@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import nodemailer from 'nodemailer';
-import Meeting from '../../models/Meeting';
+import Meeting from '../models/Meeting';
 import { MeetingData, ApiResponse } from '../../types';
 
 const transporter = nodemailer.createTransport({

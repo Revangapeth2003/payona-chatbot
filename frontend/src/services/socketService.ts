@@ -23,6 +23,7 @@ interface ClientToServerEvents {
 }
 
 interface Message {
+  _id?: string;
   id: string;
   text: string;
   user: string;
@@ -38,9 +39,11 @@ interface MessageData {
 }
 
 interface ConversationState {
+  _id?: string;
   conversationId: string;
   participants: string[];
   status: string;
+  createdAt?: string;
 }
 
 interface TypingStatus {
@@ -60,8 +63,8 @@ class SocketService {
     this.isConnected = false;
   }
 
-  // Initialize connection
-  connect(serverUrl: string = 'http://localhost:3001'): Socket<ServerToClientEvents, ClientToServerEvents> {
+  // Initialize connection to backend on port 8000
+  connect(serverUrl: string = 'http://localhost:8000'): Socket<ServerToClientEvents, ClientToServerEvents> {
     if (this.socket?.connected) {
       console.log('Socket already connected');
       return this.socket;
@@ -108,8 +111,6 @@ class SocketService {
       }
     });
 
-    // Note: 'error' event is handled differently in Socket.IO v4+
-    // It's automatically included in ServerToClientEvents interface
     this.socket.on('error', (error: { message: string }) => {
       console.error('❌ Socket Error:', error);
     });

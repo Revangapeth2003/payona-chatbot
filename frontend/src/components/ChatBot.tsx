@@ -1,5 +1,18 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import socketService, { Message, MessageData, ConversationState, TypingStatus } from '../services/socketService';
+import './ChatBot.css';
+
+interface ChatOption {
+  text: string;
+  value: string;
+  icon?: string;
+  className?: string;
+}
+
+interface ProcessingStatus {
+  isProcessing: boolean;
+  message: string;
+}
 
 interface ChatBotProps {
   userId?: string;
@@ -8,9 +21,9 @@ interface ChatBotProps {
 }
 
 const ChatBot: React.FC<ChatBotProps> = ({ 
-  userId = 'anonymous',
-  conversationId = 'default-conversation',
-  serverUrl = 'http://localhost:3001'
+  userId = 'student_001',
+  conversationId = 'payona_overseas_chat',
+  serverUrl = 'http://localhost:8000'
 }) => {
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [connectionError, setConnectionError] = useState<string>('');
@@ -19,13 +32,14 @@ const ChatBot: React.FC<ChatBotProps> = ({
   const [isTyping, setIsTyping] = useState<boolean>(false);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [conversationState, setConversationState] = useState<ConversationState | null>(null);
+  const [showOptions, setShowOptions] = useState<ChatOption[]>([]);
+  const [processingStatus, setProcessingStatus] = useState<ProcessingStatus>({ isProcessing: false, message: '' });
   
-  // Fix: Provide initial value for useRef
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Scroll to bottom when new messages arrive
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
@@ -34,15 +48,13 @@ const ChatBot: React.FC<ChatBotProps> = ({
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
-  // Initialize socket connection
   useEffect(() => {
-    console.log('🔄 Initializing ChatBot component...');
+    console.log('🔄 Initializing PayanaOverseas ChatBot...');
     
     const socket = socketService.connect(serverUrl);
 
-    // Connection status handlers with proper typing
     socket.on('connect', () => {
-      console.log('✅ ChatBot connected successfully');
+      console.log('✅ PayanaOverseas ChatBot connected successfully');
       setIsConnected(true);
       setConnectionError('');
       
@@ -51,38 +63,35 @@ const ChatBot: React.FC<ChatBotProps> = ({
       }, 100);
     });
 
-    // Fix: Properly type the reason parameter
     socket.on('disconnect', (reason: string) => {
-      console.log('❌ ChatBot disconnected:', reason);
+      console.log('❌ PayanaOverseas ChatBot disconnected:', reason);
       setIsConnected(false);
       setConnectionError(`Disconnected: ${reason}`);
     });
 
-    // Fix: Properly type the error parameter
     socket.on('connect_error', (error: Error) => {
-      console.error('❌ ChatBot connection failed:', error);
+      console.error('❌ PayanaOverseas ChatBot connection failed:', error);
       setIsConnected(false);
       setConnectionError(`Connection failed: ${error.message}`);
     });
 
-    // Set up message event listeners
     socketService.onInitialMessages((initialMessages: Message[]) => {
-      console.log('📥 Received initial messages:', initialMessages);
+      console.log('📥 PayanaOverseas: Received initial messages:', initialMessages);
       setMessages(initialMessages);
     });
 
     socketService.onNewMessage((newMessage: Message) => {
-      console.log('📥 Received new message:', newMessage);
+      console.log('📥 PayanaOverseas: Received new message:', newMessage);
       setMessages(prevMessages => [...prevMessages, newMessage]);
     });
 
     socketService.onConversationState((state: ConversationState) => {
-      console.log('📊 Conversation state updated:', state);
+      console.log('📊 PayanaOverseas: Conversation state updated:', state);
       setConversationState(state);
     });
 
     socketService.onTypingStatus((status: TypingStatus) => {
-      console.log('⌨️ Typing status:', status);
+      console.log('⌨️ PayanaOverseas: Typing status:', status);
       
       if (status.userId !== userId) {
         if (status.isTyping) {
@@ -93,64 +102,118 @@ const ChatBot: React.FC<ChatBotProps> = ({
       }
     });
 
-    // Cleanup function
+    // Listen for options to show
+    const socket_raw = socketService.socket;
+    if (socket_raw) {
+      socket_raw.on('show-options', (options: ChatOption[]) => {
+        console.log('📋 PayanaOverseas: Show options:', options);
+        setShowOptions(options);
+      });
+
+      socket_raw.on('processing-status', (status: ProcessingStatus) => {
+        console.log('⚙️ PayanaOverseas: Processing status:', status);
+        setProcessingStatus(status);
+      });
+
+      socket_raw.on('trigger-file-upload', () => {
+        console.log('📁 PayanaOverseas: Trigger file upload');
+        triggerFileInput();
+      });
+    }
+
     return () => {
-      console.log('🧹 Cleaning up ChatBot...');
+      console.log('🧹 Cleaning up PayanaOverseas ChatBot...');
       socketService.removeListeners();
       socketService.disconnect();
       setIsConnected(false);
       setMessages([]);
       setTypingUsers([]);
+      setShowOptions([]);
     };
   }, [conversationId, serverUrl, userId]);
 
-  // Handle message sending
   const handleSendMessage = useCallback((e: React.FormEvent) => {
     e.preventDefault();
     
     if (!inputMessage.trim()) return;
     
     if (!socketService.connected) {
-      setConnectionError('Cannot send message: Not connected to server');
+      setConnectionError('Cannot send message: Not connected to PayanaOverseas server');
       return;
     }
 
     const messageData: MessageData = {
       conversationId,
       message: inputMessage.trim(),
-      user: userId,
+      sender: 'user',
       timestamp: new Date().toISOString()
     };
 
     socketService.sendMessage(messageData);
     setInputMessage('');
+    setShowOptions([]); // Clear options when user sends message
     
-    // Stop typing indicator
     if (isTyping) {
       socketService.stopTyping(conversationId, userId);
       setIsTyping(false);
     }
     
-    // Clear typing timeout
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = null;
     }
   }, [inputMessage, conversationId, userId, isTyping]);
 
-  // Handle typing indicators
+  const handleOptionClick = useCallback((option: ChatOption) => {
+    if (!socketService.connected) return;
+
+    // Send option selection to server
+    const socket_raw = socketService.socket;
+    if (socket_raw) {
+      socket_raw.emit('select-option', { 
+        option: option.value, 
+        step: conversationState?.conversationFlow?.step || 0 
+      });
+    }
+
+    setShowOptions([]); // Clear options after selection
+  }, [conversationState]);
+
+  const triggerFileInput = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && socketService.connected) {
+      const fileName = file.name;
+      
+      // Convert file to base64 for transmission (simplified)
+      const reader = new FileReader();
+      reader.onload = () => {
+        const socket_raw = socketService.socket;
+        if (socket_raw) {
+          socket_raw.emit('upload-file', {
+            fileName: fileName,
+            fileData: reader.result as string
+          });
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+    e.target.value = '';
+  }, []);
+
   const handleTypingStart = useCallback(() => {
     if (!isTyping && socketService.connected) {
       socketService.startTyping(conversationId, userId);
       setIsTyping(true);
     }
 
-    // Clear existing timeout
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
 
-    // Set timeout to stop typing indicator
     typingTimeoutRef.current = setTimeout(() => {
       if (socketService.connected) {
         socketService.stopTyping(conversationId, userId);
@@ -164,168 +227,129 @@ const ChatBot: React.FC<ChatBotProps> = ({
     handleTypingStart();
   }, [handleTypingStart]);
 
-  // Format timestamp
+  const isInputDisabled = (): boolean => {
+    return !isConnected || processingStatus.isProcessing || showOptions.length > 0;
+  };
+
+  const getPlaceholderText = (): string => {
+    if (processingStatus.isProcessing) return processingStatus.message;
+    if (showOptions.length > 0) return "Please select an option above...";
+    if (!isConnected) return "Connecting to PayanaOverseas...";
+    return "Type your message...";
+  };
+
   const formatTimestamp = (timestamp: string): string => {
     return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   return (
-    <div style={{ maxWidth: '800px', margin: '0 auto', padding: '20px' }}>
+    <div className="chat-container">
       {/* Header */}
-      <div style={{ 
-        background: '#f5f5f5', 
-        padding: '15px', 
-        borderRadius: '8px 8px 0 0',
-        borderBottom: '1px solid #ddd'
-      }}>
-        <h2 style={{ margin: '0 0 10px 0' }}>PayOna ChatBot</h2>
-        <div style={{ fontSize: '14px' }}>
-          <span style={{ 
-            color: isConnected ? '#4CAF50' : '#f44336',
-            fontWeight: 'bold'
-          }}>
-            {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
-          </span>
-          {socketService.socketId && (
-            <span style={{ marginLeft: '10px', color: '#666' }}>
-              ID: {socketService.socketId}
+      <div className="chat-header">
+        <div className="header-content">
+          <div className="company-logo">
+            <span className="logo-icon">🌍</span>
+            PayanaOverseas
+          </div>
+          <div className="connection-status">
+            <span className={`status-indicator ${isConnected ? 'connected' : 'disconnected'}`}>
+              {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
             </span>
-          )}
+          </div>
         </div>
-        {connectionError && (
-          <div style={{ 
-            color: '#f44336', 
-            fontSize: '12px',
-            marginTop: '5px',
-            padding: '5px',
-            background: '#ffebee',
-            borderRadius: '4px'
-          }}>
-            ⚠️ {connectionError}
-          </div>
-        )}
-        {conversationState && (
-          <div style={{ fontSize: '12px', color: '#666', marginTop: '5px' }}>
-            Room: {conversationState.conversationId} | 
-            Participants: {conversationState.participants.length}
-          </div>
-        )}
       </div>
 
       {/* Messages Container */}
-      <div style={{ 
-        height: '400px',
-        overflowY: 'auto',
-        border: '1px solid #ddd',
-        borderTop: 'none',
-        padding: '15px',
-        background: '#fff'
-      }}>
-        {messages.length === 0 ? (
-          <div style={{ 
-            textAlign: 'center', 
-            color: '#666',
-            fontStyle: 'italic',
-            marginTop: '50px'
-          }}>
-            {isConnected ? 'No messages yet. Start the conversation!' : 'Connecting...'}
-          </div>
-        ) : (
-          messages.map((message, index) => (
-            <div 
-              key={`${message.id}-${index}`}
-              style={{ 
-                marginBottom: '15px',
-                padding: '10px',
-                borderRadius: '8px',
-                background: message.user === userId ? '#e3f2fd' : '#f5f5f5',
-                marginLeft: message.user === userId ? '20%' : '0',
-                marginRight: message.user === userId ? '0' : '20%'
-              }}
-            >
-              <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '5px' }}>
-                {message.user === userId ? 'You' : message.user}
-                <span style={{ 
-                  fontSize: '12px', 
-                  fontWeight: 'normal',
-                  color: '#666',
-                  marginLeft: '8px'
-                }}>
-                  {formatTimestamp(message.timestamp)}
-                </span>
-              </div>
-              <div style={{ fontSize: '16px' }}>
-                {message.text}
-              </div>
+      <div className="chat-messages">
+        {messages.map((message, index) => (
+          <div 
+            key={`${message.id}-${index}`}
+            className={`message ${message.sender === 'user' ? 'user-message' : 'bot-message'}`}
+            dangerouslySetInnerHTML={{ __html: message.text }}
+          />
+        ))}
+
+        {/* Processing Status */}
+        {processingStatus.isProcessing && (
+          <div className="processing-status">
+            <div className="processing-animation">
+              <div className="dot"></div>
+              <div className="dot"></div>
+              <div className="dot"></div>
             </div>
-          ))
+            <span>{processingStatus.message}</span>
+          </div>
+        )}
+
+        {/* Options */}
+        {showOptions.length > 0 && !processingStatus.isProcessing && (
+          <div className="options-container">
+            {showOptions.map((option, index) => (
+              <button
+                key={index}
+                className={`option-btn ${option.className || ''}`}
+                onClick={() => handleOptionClick(option)}
+                disabled={!isConnected}
+              >
+                {option.icon && <span className="option-icon">{option.icon}</span>}
+                {option.text}
+              </button>
+            ))}
+          </div>
         )}
         
         {/* Typing indicator */}
         {typingUsers.length > 0 && (
-          <div style={{ 
-            fontSize: '14px', 
-            color: '#666',
-            fontStyle: 'italic',
-            padding: '10px'
-          }}>
-            {typingUsers.join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...
+          <div className="typing-indicator">
+            <div className="typing-dots">
+              <div className="dot"></div>
+              <div className="dot"></div>
+              <div className="dot"></div>
+            </div>
+            <span>
+              {typingUsers.join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...
+            </span>
           </div>
         )}
         
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Message Input */}
-      <form onSubmit={handleSendMessage} style={{ display: 'flex' }}>
-        <input
+      {/* Chat Input */}
+      <div className="chat-input">
+        <input 
           ref={inputRef}
-          type="text"
+          type="text" 
           value={inputMessage}
           onChange={handleInputChange}
-          placeholder={isConnected ? "Type your message..." : "Connecting..."}
-          disabled={!isConnected}
-          style={{
-            flex: 1,
-            padding: '15px',
-            border: '1px solid #ddd',
-            borderTop: 'none',
-            borderRadius: '0 0 0 8px',
-            fontSize: '16px',
-            outline: 'none'
-          }}
+          onKeyPress={(e) => e.key === 'Enter' && handleSendMessage(e)}
+          placeholder={getPlaceholderText()}
+          disabled={isInputDisabled()}
         />
-        <button
-          type="submit"
-          disabled={!isConnected || !inputMessage.trim()}
-          style={{
-            padding: '15px 20px',
-            border: '1px solid #ddd',
-            borderLeft: 'none',
-            borderTop: 'none',
-            borderRadius: '0 0 8px 0',
-            background: isConnected ? '#2196F3' : '#ccc',
-            color: 'white',
-            cursor: isConnected ? 'pointer' : 'not-allowed',
-            fontSize: '16px'
-          }}
+        <button 
+          onClick={handleSendMessage} 
+          disabled={isInputDisabled() || !inputMessage.trim()}
+          className="send-button"
         >
-          Send
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+          </svg>
         </button>
-      </form>
+      </div>
+      
+      {/* Hidden file input */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileUpload}
+        accept=".pdf,.doc,.docx"
+        style={{ display: 'none' }}
+      />
 
-      {/* Debug Info (remove in production) */}
-      {process.env.NODE_ENV === 'development' && (
-        <div style={{ 
-          marginTop: '20px', 
-          padding: '10px', 
-          background: '#f0f0f0', 
-          borderRadius: '4px',
-          fontSize: '12px',
-          fontFamily: 'monospace'
-        }}>
-          <strong>Debug Info:</strong><br/>
-          Connection Status: {JSON.stringify(socketService.getConnectionStatus(), null, 2)}
+      {/* Connection Error */}
+      {connectionError && (
+        <div className="connection-error">
+          ⚠️ {connectionError}
         </div>
       )}
     </div>
