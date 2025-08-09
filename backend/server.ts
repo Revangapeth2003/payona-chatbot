@@ -7,7 +7,6 @@ import dotenv from 'dotenv';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import nodemailer from 'nodemailer';
-import { google } from 'googleapis';
 
 dotenv.config();
 
@@ -27,9 +26,9 @@ app.use(express.urlencoded({ extended: true }));
 
 // Enhanced interfaces for PayanaOverseas conversation flow
 interface ServerToClientEvents {
-  'initial-messages': (messages: IChatMessage[]) => void;
-  'new-message': (message: IChatMessage) => void;
-  'conversation-state': (state: IConversation) => void;
+  'initial-messages': (messages: IUserMessage[]) => void;
+  'new-message': (message: IUserMessage) => void;
+  'conversation-state': (state: any) => void;
   'typing-status': (status: TypingStatus) => void;
   'show-options': (options: ChatOption[]) => void;
   'processing-status': (status: { isProcessing: boolean; message: string }) => void;
@@ -53,13 +52,12 @@ interface SocketData {
   conversationId?: string;
 }
 
-interface IChatMessage {
-  _id?: string;
+// Message within user document
+interface IUserMessage {
   id: string;
   text: string;
   sender: 'user' | 'bot';
   timestamp: string;
-  conversationId: string;
   messageType?: 'text' | 'options' | 'summary';
 }
 
@@ -70,8 +68,13 @@ interface ChatOption {
   className?: string;
 }
 
-interface ConversationFlow {
-  step: number;
+// Single User Document containing ALL user data
+interface IUser {
+  _id?: string;
+  socketId: string;
+  conversationId: string;
+  
+  // Personal Information
   name: string;
   age: string;
   email: string;
@@ -103,6 +106,25 @@ interface ConversationFlow {
   financialJobSupport: string;
   currentFlow: string;
   isProcessingUGEmail: boolean;
+  step: number;
+  
+  // NEW: Study-specific fields
+  studyCountry: string;
+  studyLevel: string;
+  studyField: string;
+  studyBudget: string;
+  studyStartTime: string;
+  studyDuration: string;
+  studyEmailSent: boolean;
+  studyProgramContinue: string;
+  
+  // Messages Array (all messages in one document)
+  messages: IUserMessage[];
+  
+  // Metadata
+  joinedAt: string;
+  lastActivity: string;
+  status: string;
 }
 
 interface MessageData {
@@ -110,15 +132,6 @@ interface MessageData {
   message: string;
   sender: 'user' | 'bot';
   timestamp?: string;
-}
-
-interface IConversation {
-  _id?: string;
-  conversationId: string;
-  participants: string[];
-  createdAt: string;
-  status: string;
-  conversationFlow: ConversationFlow;
 }
 
 interface TypingStatus {
@@ -143,79 +156,101 @@ const io = new SocketIOServer<
 // MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/payona_chatbot';
 
+mongoose.connection.on('connected', () => {
+  console.log('✅ Mongoose connected to MongoDB:', MONGODB_URI);
+});
+
+mongoose.connection.on('error', (err) => {
+  console.error('❌ Mongoose connection error:', err);
+});
+
+mongoose.connection.on('disconnected', () => {
+  console.log('⚠️ Mongoose disconnected from MongoDB');
+});
+
 mongoose.connect(MONGODB_URI)
   .then(() => {
     console.log('✅ Connected to MongoDB: payona_chatbot');
+    console.log('📁 Collection: users (single collection for all user data)');
   })
   .catch((error) => {
     console.error('❌ MongoDB connection error:', error);
     process.exit(1);
   });
 
-// Enhanced MongoDB Schemas
-const chatMessageSchema = new mongoose.Schema({
-  id: { type: String, required: true, unique: true },
-  text: { type: String, required: true },
-  sender: { type: String, enum: ['user', 'bot'], required: true },
-  timestamp: { type: String, required: true },
+// Updated User Schema with Study fields
+const userSchema = new mongoose.Schema({
+  socketId: { type: String, required: true, unique: true },
   conversationId: { type: String, required: true, index: true },
-  messageType: { type: String, enum: ['text', 'options', 'summary'], default: 'text' }
+  
+  // Personal Information
+  name: { type: String, default: '' },
+  age: { type: String, default: '' },
+  email: { type: String, default: '' },
+  purpose: { type: String, default: '' },
+  passport: { type: String, default: '' },
+  resume: { type: String, default: null },
+  qualification: { type: String, default: '' },
+  ugMajor: { type: String, default: '' },
+  workExperience: { type: String, default: '' },
+  experienceYears: { type: String, default: '' },
+  germanLanguageUG: { type: String, default: '' },
+  examReadiness: { type: String, default: '' },
+  ugEmailSent: { type: Boolean, default: false },
+  ugProgramContinue: { type: String, default: '' },
+  ugProgramStartTime: { type: String, default: '' },
+  experience: { type: String, default: '' },
+  interestedInCategories: { type: String, default: '' },
+  germanLanguage: { type: String, default: '' },
+  continueProgram: { type: String, default: '' },
+  programStartTime: { type: String, default: '' },
+  entryYear: { type: String, default: '' },
+  appointmentType: { type: String, default: '' },
+  appointmentTime: { type: String, default: '' },
+  appointmentDate: { type: String, default: '' },
+  appointmentConfirmed: { type: Boolean, default: false },
+  emailSent: { type: Boolean, default: false },
+  isProcessingEmail: { type: Boolean, default: false },
+  needsFinancialSetup: { type: Boolean, default: false },
+  financialJobSupport: { type: String, default: '' },
+  currentFlow: { type: String, default: '' },
+  isProcessingUGEmail: { type: Boolean, default: false },
+  step: { type: Number, default: 0 },
+  
+  // NEW: Study-specific fields
+  studyCountry: { type: String, default: '' },
+  studyLevel: { type: String, default: '' },
+  studyField: { type: String, default: '' },
+  studyBudget: { type: String, default: '' },
+  studyStartTime: { type: String, default: '' },
+  studyDuration: { type: String, default: '' },
+  studyEmailSent: { type: Boolean, default: false },
+  studyProgramContinue: { type: String, default: '' },
+  
+  // Messages Array - All messages stored in single document
+  messages: [{
+    id: { type: String, required: true },
+    text: { type: String, required: true },
+    sender: { type: String, enum: ['user', 'bot'], required: true },
+    timestamp: { type: String, required: true },
+    messageType: { type: String, enum: ['text', 'options', 'summary'], default: 'text' }
+  }],
+  
+  // Metadata
+  joinedAt: { type: String, default: () => new Date().toISOString() },
+  lastActivity: { type: String, default: () => new Date().toISOString() },
+  status: { type: String, default: 'active' }
 }, { 
-  collection: 'chat_messages',
-  timestamps: true 
+  collection: 'users',
+  timestamps: true
 });
 
-const conversationSchema = new mongoose.Schema({
-  conversationId: { type: String, required: true, unique: true },
-  participants: [{ type: String, required: true }],
-  createdAt: { type: String, required: true },
-  status: { type: String, required: true, default: 'active' },
-  conversationFlow: {
-    step: { type: Number, default: 0 },
-    name: { type: String, default: '' },
-    age: { type: String, default: '' },
-    email: { type: String, default: '' },
-    purpose: { type: String, default: '' },
-    passport: { type: String, default: '' },
-    resume: { type: String, default: null },
-    qualification: { type: String, default: '' },
-    ugMajor: { type: String, default: '' },
-    workExperience: { type: String, default: '' },
-    experienceYears: { type: String, default: '' },
-    germanLanguageUG: { type: String, default: '' },
-    examReadiness: { type: String, default: '' },
-    ugEmailSent: { type: Boolean, default: false },
-    ugProgramContinue: { type: String, default: '' },
-    ugProgramStartTime: { type: String, default: '' },
-    experience: { type: String, default: '' },
-    interestedInCategories: { type: String, default: '' },
-    germanLanguage: { type: String, default: '' },
-    continueProgram: { type: String, default: '' },
-    programStartTime: { type: String, default: '' },
-    entryYear: { type: String, default: '' },
-    appointmentType: { type: String, default: '' },
-    appointmentTime: { type: String, default: '' },
-    appointmentDate: { type: String, default: '' },
-    appointmentConfirmed: { type: Boolean, default: false },
-    emailSent: { type: Boolean, default: false },
-    isProcessingEmail: { type: Boolean, default: false },
-    needsFinancialSetup: { type: Boolean, default: false },
-    financialJobSupport: { type: String, default: '' },
-    currentFlow: { type: String, default: '' },
-    isProcessingUGEmail: { type: Boolean, default: false }
-  }
-}, { 
-  collection: 'payona_conversations',
-  timestamps: true 
-});
-
-// MongoDB Models
-const ChatMessage = mongoose.model<IChatMessage>('ChatMessage', chatMessageSchema);
-const Conversation = mongoose.model<IConversation>('Conversation', conversationSchema);
+// MongoDB Model
+const User = mongoose.model<IUser>('User', userSchema);
 
 // Email Configuration
 const createEmailTransporter = () => {
-  return nodemailer.createTransport({
+  return nodemailer.createTransporter({
     service: 'gmail',
     auth: {
       user: process.env.EMAIL_USER,
@@ -224,8 +259,10 @@ const createEmailTransporter = () => {
   });
 };
 
-// Helper functions
-const generateMessageId = (): string => Math.random().toString(36).substr(2, 9);
+// Helper Functions
+const generateMessageId = (): string => {
+  return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+};
 
 const validateEmail = (email: string): boolean => {
   const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -241,84 +278,201 @@ const validateAge = (age: string): boolean => {
   return !isNaN(numAge) && numAge >= 16 && numAge <= 65;
 };
 
-const getConversationMessages = async (conversationId: string): Promise<IChatMessage[]> => {
+// User Management Functions
+const getOrCreateUser = async (
+  conversationId: string, 
+  socketId: string
+): Promise<IUser | null> => {
   try {
-    return await ChatMessage.find({ conversationId })
-      .sort({ timestamp: 1 })
-      .limit(100)
-      .lean();
+    console.log(`🔍 Getting/Creating user for conversation: ${conversationId}, socket: ${socketId}`);
+    
+    let user = await User.findOne({ socketId, conversationId });
+    
+    if (!user) {
+      console.log('📝 Creating new user with single ObjectId');
+      const newUser = new User({
+        socketId: socketId,
+        conversationId: conversationId,
+        name: '',
+        age: '',
+        email: '',
+        purpose: '',
+        passport: '',
+        resume: null,
+        qualification: '',
+        ugMajor: '',
+        workExperience: '',
+        experienceYears: '',
+        germanLanguageUG: '',
+        examReadiness: '',
+        ugEmailSent: false,
+        ugProgramContinue: '',
+        ugProgramStartTime: '',
+        experience: '',
+        interestedInCategories: '',
+        germanLanguage: '',
+        continueProgram: '',
+        programStartTime: '',
+        entryYear: '',
+        appointmentType: '',
+        appointmentTime: '',
+        appointmentDate: '',
+        appointmentConfirmed: false,
+        emailSent: false,
+        isProcessingEmail: false,
+        needsFinancialSetup: false,
+        financialJobSupport: '',
+        currentFlow: '',
+        isProcessingUGEmail: false,
+        step: 0,
+        // Study fields
+        studyCountry: '',
+        studyLevel: '',
+        studyField: '',
+        studyBudget: '',
+        studyStartTime: '',
+        studyDuration: '',
+        studyEmailSent: false,
+        studyProgramContinue: '',
+        messages: [],
+        joinedAt: new Date().toISOString(),
+        lastActivity: new Date().toISOString(),
+        status: 'active'
+      });
+      
+      user = await newUser.save();
+      console.log('✅ New user created with single ObjectId:', user._id);
+    } else {
+      console.log(`👤 Existing user found with ObjectId: ${user._id}, name: ${user.name || 'Unnamed'}`);
+      user.lastActivity = new Date().toISOString();
+      await user.save();
+    }
+    
+    return user.toObject();
+    
   } catch (error) {
-    console.error('Error fetching messages:', error);
+    console.error('❌ Error creating/fetching user:', error);
+    return null;
+  }
+};
+
+const addMessageToUser = async (
+  socketId: string,
+  conversationId: string,
+  messageData: IUserMessage
+): Promise<boolean> => {
+  try {
+    console.log('💾 Adding message to user document:', messageData);
+    
+    const result = await User.findOneAndUpdate(
+      { socketId, conversationId },
+      { 
+        $push: { messages: messageData },
+        $set: { lastActivity: new Date().toISOString() }
+      },
+      { new: true }
+    );
+    
+    if (result) {
+      console.log('✅ Message added to user document successfully');
+      return true;
+    } else {
+      console.log('❌ User not found for message addition');
+      return false;
+    }
+  } catch (error) {
+    console.error('❌ Error adding message to user:', error);
+    return false;
+  }
+};
+
+const updateUser = async (
+  socketId: string, 
+  conversationId: string,
+  updates: Partial<IUser>
+): Promise<boolean> => {
+  try {
+    console.log(`🔄 Updating user for socket: ${socketId}`, updates);
+    
+    const updatedUser = await User.findOneAndUpdate(
+      { socketId, conversationId },
+      { 
+        ...updates,
+        lastActivity: new Date().toISOString()
+      },
+      { new: true }
+    );
+    
+    if (updatedUser) {
+      console.log('✅ User updated successfully, ObjectId:', updatedUser._id);
+      return true;
+    } else {
+      console.log('❌ User not found for update');
+      return false;
+    }
+  } catch (error) {
+    console.error('❌ Error updating user:', error);
+    return false;
+  }
+};
+
+const getUserMessages = async (socketId: string, conversationId: string): Promise<IUserMessage[]> => {
+  try {
+    const user = await User.findOne({ socketId, conversationId }).select('messages');
+    if (user && user.messages) {
+      console.log(`📨 Found ${user.messages.length} messages for user`);
+      return user.messages;
+    }
+    return [];
+  } catch (error) {
+    console.error('❌ Error fetching user messages:', error);
     return [];
   }
 };
 
-const addMessageToConversation = async (messageData: IChatMessage): Promise<IChatMessage | null> => {
+// NEW: Study Program Email Function
+const sendStudyProgramEmail = async (emailData: any): Promise<boolean> => {
   try {
-    const message = new ChatMessage(messageData);
-    return (await message.save()).toObject();
+    const transporter = createEmailTransporter();
+    
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: process.env.ADMIN_EMAIL || 'admin@payanaoverseas.com',
+      cc: emailData.email,
+      subject: `New Study Program Inquiry - ${emailData.studyLevel} in ${emailData.studyCountry} - ${emailData.name}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #e60023;">📚 New Study Program Application</h2>
+          <div style="background: #f8f9fa; padding: 20px; border-radius: 8px;">
+            <h3>Student Details:</h3>
+            <p><strong>Name:</strong> ${emailData.name}</p>
+            <p><strong>Age:</strong> ${emailData.age}</p>
+            <p><strong>Email:</strong> ${emailData.email}</p>
+            <p><strong>Purpose:</strong> ${emailData.purpose}</p>
+            <p><strong>Qualification:</strong> ${emailData.qualification}</p>
+            <p><strong>Study Country:</strong> ${emailData.studyCountry}</p>
+            <p><strong>Study Level:</strong> ${emailData.studyLevel}</p>
+            <p><strong>Field of Study:</strong> ${emailData.studyField}</p>
+            <p><strong>Budget:</strong> ${emailData.studyBudget}</p>
+            <p><strong>Preferred Start Time:</strong> ${emailData.studyStartTime}</p>
+            <p><strong>Program Duration:</strong> ${emailData.studyDuration}</p>
+            <p><strong>Submitted:</strong> ${new Date().toLocaleString()}</p>
+          </div>
+          <p style="margin-top: 20px;">Please contact the student for further processing.</p>
+        </div>
+      `
+    };
+    
+    await transporter.sendMail(mailOptions);
+    console.log('✅ Study Program email sent successfully');
+    return true;
   } catch (error) {
-    console.error('Error saving message:', error);
-    return null;
+    console.error('❌ Error sending Study program email:', error);
+    return false;
   }
 };
 
-const getOrCreateConversation = async (conversationId: string, participants: string[] = []): Promise<IConversation | null> => {
-  try {
-    let conversation = await Conversation.findOne({ conversationId }).lean();
-    
-    if (!conversation) {
-      const newConversation = new Conversation({
-        conversationId,
-        participants,
-        createdAt: new Date().toISOString(),
-        status: 'active',
-        conversationFlow: {
-          step: 0,
-          name: '',
-          age: '',
-          email: '',
-          purpose: '',
-          passport: '',
-          resume: null,
-          qualification: '',
-          ugMajor: '',
-          workExperience: '',
-          experienceYears: '',
-          germanLanguageUG: '',
-          examReadiness: '',
-          ugEmailSent: false,
-          ugProgramContinue: '',
-          ugProgramStartTime: '',
-          experience: '',
-          interestedInCategories: '',
-          germanLanguage: '',
-          continueProgram: '',
-          programStartTime: '',
-          entryYear: '',
-          appointmentType: '',
-          appointmentTime: '',
-          appointmentDate: '',
-          appointmentConfirmed: false,
-          emailSent: false,
-          isProcessingEmail: false,
-          needsFinancialSetup: false,
-          financialJobSupport: '',
-          currentFlow: '',
-          isProcessingUGEmail: false
-        }
-      });
-      conversation = (await newConversation.save()).toObject();
-    }
-    
-    return conversation;
-  } catch (error) {
-    console.error('Error creating/fetching conversation:', error);
-    return null;
-  }
-};
-
-// Email sending functions
+// Keep existing email functions
 const sendUGProgramEmail = async (emailData: any): Promise<boolean> => {
   try {
     const transporter = createEmailTransporter();
@@ -348,9 +502,10 @@ const sendUGProgramEmail = async (emailData: any): Promise<boolean> => {
     };
     
     await transporter.sendMail(mailOptions);
+    console.log('✅ UG Program email sent successfully');
     return true;
   } catch (error) {
-    console.error('Error sending UG program email:', error);
+    console.error('❌ Error sending UG program email:', error);
     return false;
   }
 };
@@ -387,21 +542,23 @@ const sendGermanProgramEmail = async (emailData: any): Promise<boolean> => {
     };
     
     await transporter.sendMail(mailOptions);
+    console.log('✅ German Program email sent successfully');
     return true;
   } catch (error) {
-    console.error('Error sending German program email:', error);
+    console.error('❌ Error sending German program email:', error);
     return false;
   }
 };
 
 // Summary function
-const showConversationSummary = async (socket: any, conversationId: string, flow: ConversationFlow) => {
+const showConversationSummary = async (socket: any, conversationId: string, user: IUser) => {
   const { 
     name, age, purpose, passport, email, resume, qualification, ugMajor,
     workExperience, experienceYears, germanLanguageUG, ugProgramContinue, 
     ugProgramStartTime, experience, interestedInCategories, germanLanguage, 
-    continueProgram, programStartTime, currentFlow
-  } = flow;
+    continueProgram, programStartTime, currentFlow, studyCountry, studyLevel,
+    studyField, studyBudget, studyStartTime, studyDuration
+  } = user;
   
   let summary = `
     <div style="background: linear-gradient(135deg, #f8f9fa, #e9ecef); padding: 20px; border-radius: 12px; margin: 10px 0;">
@@ -411,35 +568,51 @@ const showConversationSummary = async (socket: any, conversationId: string, flow
         <strong>🎂 Age:</strong> ${age}<br>
         <strong>📧 Email:</strong> ${email}<br>
         <strong>🎯 Purpose:</strong> ${purpose}<br>
+  `;
+
+  if (purpose === 'Study') {
+    summary += `
+        <strong>🎓 Qualification:</strong> ${qualification}<br>
+        <strong>🌍 Study Country:</strong> ${studyCountry}<br>
+        <strong>🎒 Study Level:</strong> ${studyLevel}<br>
+        <strong>📚 Field of Study:</strong> ${studyField}<br>
+        <strong>💰 Budget:</strong> ${studyBudget}<br>
+        <strong>📅 Preferred Start:</strong> ${studyStartTime}<br>
+        <strong>⏰ Program Duration:</strong> ${studyDuration}<br>
+    `;
+  } else {
+    // Work flow summary (existing logic)
+    summary += `
         <strong>📘 Passport:</strong> ${passport}<br>
         <strong>📄 Resume:</strong> ${resume || 'Not provided'}<br>
         <strong>🎓 Qualification:</strong> ${qualification}<br>
-  `;
-  
-  if (currentFlow && currentFlow.startsWith('ug_')) {
-    summary += `
-        <strong>🎯 UG Major:</strong> ${ugMajor}<br>
-        <strong>💼 Work Experience:</strong> ${workExperience}<br>
     `;
-    if (experienceYears) {
-      summary += `<strong>📅 Experience Years:</strong> ${experienceYears}<br>`;
-    }
-    summary += `
-        <strong>🇩🇪 German Language & Exam Readiness:</strong> ${germanLanguageUG}<br>
-        <strong>📋 Continue UG Program:</strong> ${ugProgramContinue}<br>
-    `;
-    if (ugProgramStartTime) {
-      summary += `<strong>⏰ UG Program Start:</strong> ${ugProgramStartTime}<br>`;
-    }
-  } else {
-    summary += `
-        <strong>💼 Experience:</strong> ${experience}<br>
-        <strong>📈 Interested in categories:</strong> ${interestedInCategories}<br>
-        <strong>🇩🇪 German language:</strong> ${germanLanguage}<br>
-        <strong>📋 Continue program:</strong> ${continueProgram}<br>
-    `;
-    if (programStartTime) {
-      summary += `<strong>⏰ Program Start:</strong> ${programStartTime}<br>`;
+    
+    if (currentFlow && currentFlow.startsWith('ug_')) {
+      summary += `
+          <strong>🎯 UG Major:</strong> ${ugMajor}<br>
+          <strong>💼 Work Experience:</strong> ${workExperience}<br>
+      `;
+      if (experienceYears) {
+        summary += `<strong>📅 Experience Years:</strong> ${experienceYears}<br>`;
+      }
+      summary += `
+          <strong>🇩🇪 German Language & Exam Readiness:</strong> ${germanLanguageUG}<br>
+          <strong>📋 Continue UG Program:</strong> ${ugProgramContinue}<br>
+      `;
+      if (ugProgramStartTime) {
+        summary += `<strong>⏰ UG Program Start:</strong> ${ugProgramStartTime}<br>`;
+      }
+    } else {
+      summary += `
+          <strong>💼 Experience:</strong> ${experience}<br>
+          <strong>📈 Interested in categories:</strong> ${interestedInCategories}<br>
+          <strong>🇩🇪 German language:</strong> ${germanLanguage}<br>
+          <strong>📋 Continue program:</strong> ${continueProgram}<br>
+      `;
+      if (programStartTime) {
+        summary += `<strong>⏰ Program Start:</strong> ${programStartTime}<br>`;
+      }
     }
   }
   
@@ -448,57 +621,62 @@ const showConversationSummary = async (socket: any, conversationId: string, flow
     </div>
   `;
   
-  const summaryMessage: IChatMessage = {
+  const summaryMessage: IUserMessage = {
     id: generateMessageId(),
     text: summary,
     sender: 'bot',
     timestamp: new Date().toISOString(),
-    conversationId,
     messageType: 'summary'
   };
   
-  await addMessageToConversation(summaryMessage);
+  await addMessageToUser(user.socketId, conversationId, summaryMessage);
   socket.emit('new-message', summaryMessage);
   
-  const closingText = currentFlow && currentFlow.startsWith('ug_') && flow.ugEmailSent
-    ? `🎉 Thank you ${name}! Your ${ugMajor} program details have been sent to our specialized team.<br><br>📞 For immediate assistance: <strong>+91 9003619777</strong><br><br>🌟 We're excited to help you achieve your dreams of working in Germany with your ${ugMajor} background!`
-    : `🎉 Thank you ${name}! Your details have been sent to our team.<br><br>📞 For immediate assistance: <strong>+91 9003619777</strong><br><br>🌟 We're excited to help you achieve your dreams of working abroad!`;
+  const contactMessage = purpose === 'Study' ? 
+    'studying abroad' : 'working abroad';
+    
+  const closingText = `🎉 Thank you ${name}! Your details have been sent to our team.<br><br>📞 For immediate assistance: <strong>+91 9003619777</strong><br><br>🌟 We're excited to help you achieve your dreams of ${contactMessage}!`;
   
-  const closingMessage: IChatMessage = {
+  const closingMessage: IUserMessage = {
     id: generateMessageId(),
     text: closingText,
     sender: 'bot',
-    timestamp: new Date().toISOString(),
-    conversationId
+    timestamp: new Date().toISOString()
   };
   
   setTimeout(async () => {
-    await addMessageToConversation(closingMessage);
+    await addMessageToUser(user.socketId, conversationId, closingMessage);
     socket.emit('new-message', closingMessage);
   }, 1000);
 };
 
-// COMPLETE Conversation flow processing with ALL cases
+// **UPDATED CONVERSATION FLOW with Study Flow Enabled**
 const processConversationStep = async (
   socket: any, 
   conversationId: string, 
   response: string, 
-  conversation: IConversation
+  socketId: string
 ) => {
-  const flow = conversation.conversationFlow;
-  const step = flow.step;
+  const user = await User.findOne({ socketId, conversationId });
+  if (!user) {
+    console.error('❌ User not found');
+    return;
+  }
+  
+  const step = user.step;
+  
+  console.log(`🔄 Processing step ${step} for user ObjectId: ${user._id}, socket: ${socketId}: "${response}"`);
 
   const sendBotMessage = async (text: string, delay: number = 300) => {
     setTimeout(async () => {
-      const botMessage: IChatMessage = {
+      const botMessage: IUserMessage = {
         id: generateMessageId(),
         text,
         sender: 'bot',
-        timestamp: new Date().toISOString(),
-        conversationId
+        timestamp: new Date().toISOString()
       };
       
-      await addMessageToConversation(botMessage);
+      await addMessageToUser(socketId, conversationId, botMessage);
       socket.emit('new-message', botMessage);
     }, delay);
   };
@@ -509,22 +687,15 @@ const processConversationStep = async (
     }, delay);
   };
 
-  const updateFlow = async (updates: Partial<ConversationFlow>) => {
-    await Conversation.findOneAndUpdate(
-      { conversationId },
-      { $set: { 'conversationFlow': { ...flow, ...updates } } }
-    );
-  };
-
   switch(step) {
     case 0: // Initial greeting
       await sendBotMessage("Great! Let's get started. Please enter your full name:");
-      await updateFlow({ step: 1 });
+      await updateUser(socketId, conversationId, { step: 1 });
       break;
       
     case 1: // Name input
       if (validateName(response)) {
-        await updateFlow({ step: 2, name: response.trim() });
+        await updateUser(socketId, conversationId, { step: 2, name: response.trim() });
         await sendBotMessage(`Thanks ${response.trim()}! What's your age?`);
       } else {
         await sendBotMessage("Please enter a valid name (at least 2 letters, letters and spaces only)");
@@ -533,7 +704,7 @@ const processConversationStep = async (
       
     case 2: // Age input
       if (validateAge(response)) {
-        await updateFlow({ step: 3, age: response });
+        await updateUser(socketId, conversationId, { step: 3, age: response });
         await sendBotMessage("Please share your email address:");
       } else {
         await sendBotMessage("Please enter a valid age (between 16-65 years)");
@@ -542,36 +713,44 @@ const processConversationStep = async (
       
     case 3: // Email input
       if (validateEmail(response)) {
-        await updateFlow({ step: 4, email: response.toLowerCase() });
+        await updateUser(socketId, conversationId, { step: 4, email: response.toLowerCase() });
         await sendBotMessage("Are you looking to Study or Work abroad?");
         showOptions([
-          { text: "💼 Work", value: "Work", className: "work-btn" },
-          { text: "📚 Study (Coming Soon)", value: "Study", className: "study-btn disabled" }
+          { text: "📚 Study", value: "Study", className: "study-btn" },
+          { text: "💼 Work", value: "Work", className: "work-btn" }
         ]);
       } else {
         await sendBotMessage("Please enter a valid email address (e.g., example@gmail.com)");
       }
       break;
       
-    case 4: // Purpose selection
-      if (response === 'Work') {
-        await updateFlow({ step: 5, purpose: response });
+    // **UPDATED: Purpose selection with Study Flow enabled**
+    case 4: 
+      if (response === 'Study') {
+        await updateUser(socketId, conversationId, { step: 50, purpose: response, currentFlow: 'study' });
+        await sendBotMessage("Excellent choice! What is your highest qualification?");
+        showOptions([
+          { text: "🎓 12th Completed", value: "12th Completed", className: "qualification-btn" },
+          { text: "🎓 UG Completed", value: "UG Completed", className: "qualification-btn" },
+          { text: "🎓 PG Completed", value: "PG Completed", className: "qualification-btn" }
+        ]);
+      } else if (response === 'Work') {
+        await updateUser(socketId, conversationId, { step: 5, purpose: response, currentFlow: 'work' });
         await sendBotMessage("Do you have a valid passport?");
         showOptions([
           { text: "✅ Yes", value: "Yes", className: "yes-btn" },
           { text: "❌ No", value: "No", className: "no-btn" }
         ]);
-      } else if (response === 'Study') {
-        await sendBotMessage("Study option is currently not available. Please select Work to continue.");
       } else {
         await sendBotMessage("Please select either Study or Work");
       }
       break;
-      
-    case 5: // Passport question
+
+    // **EXISTING WORK FLOW (Steps 5-49)**
+    case 5: // Passport question (Work flow)
       if (response === 'Yes' || response === 'No') {
         const nextStep = response === 'No' ? 19 : 6;
-        await updateFlow({ 
+        await updateUser(socketId, conversationId, { 
           passport: response, 
           step: nextStep,
           needsFinancialSetup: response === 'No'
@@ -599,11 +778,11 @@ const processConversationStep = async (
       }
       break;
       
-    case 6: // Resume handling
+    case 6: // Resume handling (Work flow)
       if (response === 'Upload Resume') {
         socket.emit('trigger-file-upload');
       } else if (response === 'No Resume') {
-        await updateFlow({ resume: 'No resume', step: 7 });
+        await updateUser(socketId, conversationId, { resume: 'No resume', step: 7 });
         await sendBotMessage("What is your highest qualification?");
         showOptions([
           { text: "🎓 12th Completed", value: "12th Completed" },
@@ -613,13 +792,13 @@ const processConversationStep = async (
       }
       break;
       
-    case 7: // Qualification
+    case 7: // Qualification (Work flow)
       const qualifications = ["12th Completed", "UG Completed", "PG Completed"];
       if (qualifications.includes(response)) {
         const nextStep = response === "UG Completed" ? 22 : 8;
         const currentFlow = response === "UG Completed" ? 'ug_selection' : 'standard';
         
-        await updateFlow({ qualification: response, step: nextStep, currentFlow });
+        await updateUser(socketId, conversationId, { qualification: response, step: nextStep, currentFlow });
         
         if (response === "UG Completed") {
           await sendBotMessage("What is your UG major?");
@@ -645,10 +824,10 @@ const processConversationStep = async (
       }
       break;
 
-    case 8: // Work experience (standard flow)
+    case 8: // Work experience (standard work flow)
       const experiences = ["No experience", "1-2yr", "2-3yr", "3-5yr", "5+yr"];
       if (experiences.includes(response)) {
-        await updateFlow({ step: 9, experience: response });
+        await updateUser(socketId, conversationId, { step: 9, experience: response });
         await sendBotMessage("Are you interested in any of these categories?");
         showOptions([
           { text: "✅ Yes", value: "Yes", className: "yes-btn" },
@@ -659,9 +838,9 @@ const processConversationStep = async (
       }
       break;
 
-    case 9: // Interested in categories
+    case 9: // Interested in categories (work flow)
       if (response === 'Yes' || response === 'No') {
-        await updateFlow({ step: 10, interestedInCategories: response });
+        await updateUser(socketId, conversationId, { step: 10, interestedInCategories: response });
         await sendBotMessage("Are you ready to learn the German language?");
         showOptions([
           { text: "✅ Yes", value: "Yes", className: "yes-btn" },
@@ -672,9 +851,9 @@ const processConversationStep = async (
       }
       break;
 
-    case 10: // German language - Send email here
+    case 10: // German language - Send email here (work flow)
       if (response === 'Yes' || response === 'No') {
-        await updateFlow({ germanLanguage: response, isProcessingEmail: true });
+        await updateUser(socketId, conversationId, { germanLanguage: response, isProcessingEmail: true });
         
         socket.emit('processing-status', { 
           isProcessing: true, 
@@ -683,21 +862,21 @@ const processConversationStep = async (
         
         setTimeout(async () => {
           const emailData = {
-            name: flow.name,
-            age: flow.age,
-            email: flow.email,
-            purpose: flow.purpose,
-            passport: flow.passport,
-            resume: flow.resume,
-            qualification: flow.qualification,
-            experience: flow.experience,
-            interestedInCategories: flow.interestedInCategories,
+            name: user.name,
+            age: user.age,
+            email: user.email,
+            purpose: user.purpose,
+            passport: user.passport,
+            resume: user.resume,
+            qualification: user.qualification,
+            experience: user.experience,
+            interestedInCategories: user.interestedInCategories,
             germanLanguage: response
           };
           
           const emailSent = await sendGermanProgramEmail(emailData);
           
-          await updateFlow({ 
+          await updateUser(socketId, conversationId, { 
             step: 11, 
             emailSent: emailSent, 
             isProcessingEmail: false 
@@ -725,9 +904,9 @@ const processConversationStep = async (
       }
       break;
 
-    case 11: // Continue program
+    case 11: // Continue program (work flow)
       if (response === 'Yes' || response === 'No') {
-        await updateFlow({ continueProgram: response, step: response === 'Yes' ? 12 : 21 });
+        await updateUser(socketId, conversationId, { continueProgram: response, step: response === 'Yes' ? 12 : 21 });
         
         if (response === 'Yes') {
           await sendBotMessage("When can you kick start your program?");
@@ -738,134 +917,18 @@ const processConversationStep = async (
           ]);
         } else {
           await sendBotMessage("No problem! Our team will still contact you to discuss other opportunities that might interest you.");
-          setTimeout(() => showConversationSummary(socket, conversationId, flow), 1000);
+          setTimeout(() => showConversationSummary(socket, conversationId, user), 1000);
         }
       } else {
         await sendBotMessage("Please select either Yes or No");
       }
       break;
 
-    case 12: // Program start timing
-      const startTimes = ["Immediately", "Need some time", "Need more clarification"];
-      if (startTimes.includes(response)) {
-        let nextStep = 21;
-        if (response === "Need more clarification") nextStep = 13;
-        else if (response === "Need some time") nextStep = 18;
-        
-        await updateFlow({ programStartTime: response, step: nextStep });
-        
-        if (response === "Need more clarification") {
-          await sendBotMessage("Would you like to schedule a consultation call with our expert?");
-          showOptions([
-            { text: "✅ Yes", value: "Yes", className: "yes-btn" },
-            { text: "❌ No", value: "No", className: "no-btn" }
-          ]);
-        } else if (response === "Need some time") {
-          await sendBotMessage("When do you want to enter into Germany?");
-          showOptions([
-            { text: "📅 2025", value: "2025", className: "year-btn" },
-            { text: "📅 2026", value: "2026", className: "year-btn" },
-            { text: "📅 2027", value: "2027", className: "year-btn" }
-          ]);
-        } else {
-          await sendBotMessage("Perfect! Our team will contact you soon to begin the process.");
-          setTimeout(() => showConversationSummary(socket, conversationId, flow), 1000);
-        }
-      } else {
-        await sendBotMessage("Please select an option");
-      }
-      break;
-
-    case 13: // Schedule consultation
-      if (response === 'Yes') {
-        await updateFlow({ step: 14 });
-        await sendBotMessage("How would you prefer to have your consultation?");
-        showOptions([
-          { text: "🏢 In-person", value: "In-person appointment", className: "inperson-btn" },
-          { text: "💻 Google Meet", value: "Google Meet appointment", className: "online-btn" }
-        ]);
-      } else {
-        await sendBotMessage("No problem! Our team will contact you via email and phone.");
-        setTimeout(() => showConversationSummary(socket, conversationId, flow), 1000);
-      }
-      break;
-
-    case 14: // Appointment type
-      const appointmentTypes = ["In-person appointment", "Google Meet appointment"];
-      if (appointmentTypes.includes(response)) {
-        await updateFlow({ appointmentType: response, step: 15 });
-        await sendBotMessage("What time would be convenient for you?");
-        showOptions([
-          { text: "🌅 Morning", value: "Morning", className: "time-btn" },
-          { text: "🌞 Afternoon", value: "Afternoon", className: "time-btn" },
-          { text: "🌆 Evening", value: "Evening", className: "time-btn" }
-        ]);
-      } else {
-        await sendBotMessage("Please select an appointment type");
-      }
-      break;
-
-    case 15: // Appointment time
-      const times = ["Morning", "Afternoon", "Evening"];
-      if (times.includes(response)) {
-        await updateFlow({ appointmentTime: response, step: 16 });
-        await sendBotMessage("Which day would work best for you?");
-        showOptions([
-          { text: "📅 Tomorrow", value: "Tomorrow", className: "date-btn" },
-          { text: "📅 This Weekend", value: "This Weekend", className: "date-btn" },
-          { text: "📅 Next Week", value: "Next Week", className: "date-btn" }
-        ]);
-      } else {
-        await sendBotMessage("Please select a time preference");
-      }
-      break;
-
-    case 16: // Appointment date
-      const dates = ["Tomorrow", "This Weekend", "Next Week"];
-      if (dates.includes(response)) {
-        await updateFlow({ appointmentDate: response, step: 17, appointmentConfirmed: true });
-        await sendBotMessage(`Perfect! We've scheduled your ${flow.appointmentType} for ${response} ${flow.appointmentTime}. Our team will contact you with the exact details.`);
-        setTimeout(() => showConversationSummary(socket, conversationId, flow), 1500);
-      } else {
-        await sendBotMessage("Please select a date preference");
-      }
-      break;
-
-    case 18: // Entry year
-      const years = ["2025", "2026", "2027"];
-      if (years.includes(response)) {
-        await updateFlow({ entryYear: response, step: 21 });
-        await sendBotMessage(`Great! We've noted that you want to enter Germany in ${response}. Our team will create a timeline for you and contact you accordingly.`);
-        setTimeout(() => showConversationSummary(socket, conversationId, flow), 1000);
-      } else {
-        await sendBotMessage("Please select a year");
-      }
-      break;
-
-    case 19: // Financial setup path
-      const financialResponses = ["Yes", "Claim Free Passport", "Register Now"];
-      if (financialResponses.includes(response)) {
-        await updateFlow({ financialJobSupport: response, step: 20 });
-        
-        if (response === "Claim Free Passport") {
-          await sendBotMessage("Great! We'll help you with the passport process. Our team will guide you through the documentation and application process.");
-        } else if (response === "Register Now") {
-          await sendBotMessage("Excellent! Let's get you registered for our program. Our team will contact you with the registration details.");
-        } else {
-          await sendBotMessage("Perfect! You're ready to begin your journey to Germany. Our team will contact you with the next steps.");
-        }
-        
-        setTimeout(() => showConversationSummary(socket, conversationId, flow), 1500);
-      } else {
-        await sendBotMessage("Please select an option");
-      }
-      break;
-
-    // UG Major flow cases (22-30)
+    // UG Major flow cases (22-27) - Keep existing UG work flow
     case 22: // UG Major selection
       const ugMajors = ["Nurses", "Dentist", "Engineering", "Arts Background", "MBBS"];
       if (ugMajors.includes(response)) {
-        await updateFlow({ 
+        await updateUser(socketId, conversationId, { 
           ugMajor: response, 
           step: 23, 
           currentFlow: `ug_${response.toLowerCase().replace(' ', '_')}` 
@@ -883,7 +946,7 @@ const processConversationStep = async (
     case 23: // Work experience for UG majors
       if (response === 'Yes' || response === 'No') {
         const nextStep = response === 'Yes' ? 24 : 25;
-        await updateFlow({ workExperience: response, step: nextStep });
+        await updateUser(socketId, conversationId, { workExperience: response, step: nextStep });
         
         if (response === 'Yes') {
           await sendBotMessage("How many years of experience?");
@@ -894,7 +957,7 @@ const processConversationStep = async (
             { text: "🏆 5+ Years", value: "5+yr" }
           ]);
         } else {
-          const germanQuestion = flow.ugMajor === 'Dentist' 
+          const germanQuestion = user.ugMajor === 'Dentist' 
             ? "Are you willing to learn German language and ready to clear FSP and KP exams?"
             : "Are you willing to learn German language?";
           await sendBotMessage(germanQuestion);
@@ -911,8 +974,8 @@ const processConversationStep = async (
     case 24: // Experience years for UG majors
       const experienceYears = ["1-2yr", "2-3yr", "3-5yr", "5+yr"];
       if (experienceYears.includes(response)) {
-        await updateFlow({ experienceYears: response, step: 25 });
-        const germanQuestion = flow.ugMajor === 'Dentist' 
+        await updateUser(socketId, conversationId, { experienceYears: response, step: 25 });
+        const germanQuestion = user.ugMajor === 'Dentist' 
           ? "Are you willing to learn German language and ready to clear FSP and KP exams?"
           : "Are you willing to learn German language?";
         await sendBotMessage(germanQuestion);
@@ -927,7 +990,7 @@ const processConversationStep = async (
 
     case 25: // German language and exam readiness (UG flows)
       if (response === 'Yes' || response === 'No') {
-        await updateFlow({ 
+        await updateUser(socketId, conversationId, { 
           germanLanguageUG: response, 
           examReadiness: response, 
           step: response === 'Yes' ? 26 : 29,
@@ -942,20 +1005,20 @@ const processConversationStep = async (
           
           setTimeout(async () => {
             const ugEmailData = {
-              name: flow.name,
-              age: flow.age,
-              email: flow.email,
-              qualification: flow.qualification,
-              ugMajor: flow.ugMajor,
-              workExperience: flow.workExperience,
-              experienceYears: flow.experienceYears,
+              name: user.name,
+              age: user.age,
+              email: user.email,
+              qualification: user.qualification,
+              ugMajor: user.ugMajor,
+              workExperience: user.workExperience,
+              experienceYears: user.experienceYears,
               germanLanguageUG: response,
               examReadiness: response
             };
             
             const emailSent = await sendUGProgramEmail(ugEmailData);
             
-            await updateFlow({ 
+            await updateUser(socketId, conversationId, { 
               step: 27, 
               ugEmailSent: emailSent, 
               isProcessingUGEmail: false 
@@ -979,7 +1042,7 @@ const processConversationStep = async (
           }, 500);
         } else {
           await sendBotMessage("No problem! Please enter your email correctly and we'll send you alternative opportunities.");
-          setTimeout(() => showConversationSummary(socket, conversationId, flow), 1000);
+          setTimeout(() => showConversationSummary(socket, conversationId, user), 1000);
         }
       } else {
         await sendBotMessage("Please select either Yes or No");
@@ -988,7 +1051,7 @@ const processConversationStep = async (
 
     case 27: // Continue with UG program
       if (response === 'Yes' || response === 'No') {
-        await updateFlow({ ugProgramContinue: response, step: response === 'Yes' ? 28 : 29 });
+        await updateUser(socketId, conversationId, { ugProgramContinue: response, step: response === 'Yes' ? 28 : 29 });
         
         if (response === 'Yes') {
           await sendBotMessage("When can you kick start your program?");
@@ -999,52 +1062,190 @@ const processConversationStep = async (
           ]);
         } else {
           await sendBotMessage("No problem! Our team will still contact you to discuss other opportunities that might interest you.");
-          setTimeout(() => showConversationSummary(socket, conversationId, flow), 1000);
+          setTimeout(() => showConversationSummary(socket, conversationId, user), 1000);
         }
       } else {
         await sendBotMessage("Please select either Yes or No");
       }
       break;
 
-    case 28: // UG Program start timing
-      const ugStartTimes = ["Immediately", "Need some time", "Need more clarification"];
-      if (ugStartTimes.includes(response)) {
-        let nextStep = 21;
-        if (response === "Need more clarification") nextStep = 13;
-        else if (response === "Need some time") nextStep = 18;
-        
-        await updateFlow({ ugProgramStartTime: response, step: nextStep });
-        
-        if (response === "Need more clarification") {
-          await sendBotMessage("Would you like to schedule a consultation call with our expert?");
-          showOptions([
-            { text: "✅ Yes", value: "Yes", className: "yes-btn" },
-            { text: "❌ No", value: "No", className: "no-btn" }
-          ]);
-        } else if (response === "Need some time") {
-          await sendBotMessage("When do you want to enter into Germany?");
-          showOptions([
-            { text: "📅 2025", value: "2025", className: "year-btn" },
-            { text: "📅 2026", value: "2026", className: "year-btn" },
-            { text: "📅 2027", value: "2027", className: "year-btn" }
-          ]);
-        } else {
-          await sendBotMessage("Perfect! Our team will contact you soon to begin the process.");
-          setTimeout(() => showConversationSummary(socket, conversationId, flow), 1000);
-        }
+    // **NEW: STUDY FLOW (Steps 50+)**
+    case 50: // Study qualification selection
+      const studyQualifications = ["12th Completed", "UG Completed", "PG Completed"];
+      if (studyQualifications.includes(response)) {
+        await updateUser(socketId, conversationId, { qualification: response, step: 51 });
+        await sendBotMessage("Perfect! Which country would you like to study in?");
+        showOptions([
+          { text: "🇺🇸 USA", value: "USA", className: "country-btn" },
+          { text: "🇬🇧 UK", value: "UK", className: "country-btn" },
+          { text: "🇨🇦 Canada", value: "Canada", className: "country-btn" },
+          { text: "🇦🇺 Australia", value: "Australia", className: "country-btn" },
+          { text: "🇩🇪 Germany", value: "Germany", className: "country-btn" },
+          { text: "🌍 Other", value: "Other", className: "country-btn" }
+        ]);
       } else {
-        await sendBotMessage("Please select an option");
+        await sendBotMessage("Please select a qualification from the options");
       }
       break;
 
-    case 29: // Alternative path end
-      await sendBotMessage("Thank you for your interest! Our team will review your profile and contact you with suitable opportunities.");
-      setTimeout(() => showConversationSummary(socket, conversationId, flow), 1000);
+    case 51: // Study country selection
+      const studyCountries = ["USA", "UK", "Canada", "Australia", "Germany", "Other"];
+      if (studyCountries.includes(response)) {
+        await updateUser(socketId, conversationId, { studyCountry: response, step: 52 });
+        await sendBotMessage("Great choice! What level of study are you interested in?");
+        showOptions([
+          { text: "🎓 Bachelor's Degree", value: "Bachelor's", className: "level-btn" },
+          { text: "🎓 Master's Degree", value: "Master's", className: "level-btn" },
+          { text: "🎓 PhD", value: "PhD", className: "level-btn" },
+          { text: "📜 Diploma/Certificate", value: "Diploma", className: "level-btn" },
+          { text: "🌐 Language Course", value: "Language", className: "level-btn" }
+        ]);
+      } else {
+        await sendBotMessage("Please select a country from the options");
+      }
+      break;
+
+    case 52: // Study level selection
+      const studyLevels = ["Bachelor's", "Master's", "PhD", "Diploma", "Language"];
+      if (studyLevels.includes(response)) {
+        await updateUser(socketId, conversationId, { studyLevel: response, step: 53 });
+        await sendBotMessage("Excellent! What field would you like to study?");
+        showOptions([
+          { text: "💻 Engineering & Technology", value: "Engineering", className: "field-btn" },
+          { text: "💼 Business & Management", value: "Business", className: "field-btn" },
+          { text: "⚕️ Medicine & Health", value: "Medicine", className: "field-btn" },
+          { text: "🎨 Arts & Design", value: "Arts", className: "field-btn" },
+          { text: "🔬 Science & Research", value: "Science", className: "field-btn" },
+          { text: "📚 Other", value: "Other", className: "field-btn" }
+        ]);
+      } else {
+        await sendBotMessage("Please select a study level from the options");
+      }
+      break;
+
+    case 53: // Study field selection
+      const studyFields = ["Engineering", "Business", "Medicine", "Arts", "Science", "Other"];
+      if (studyFields.includes(response)) {
+        await updateUser(socketId, conversationId, { studyField: response, step: 54 });
+        await sendBotMessage("What's your budget range for studying abroad?");
+        showOptions([
+          { text: "💰 Under $20,000", value: "Under $20k", className: "budget-btn" },
+          { text: "💰 $20,000 - $50,000", value: "$20k-$50k", className: "budget-btn" },
+          { text: "💰 $50,000 - $100,000", value: "$50k-$100k", className: "budget-btn" },
+          { text: "💰 Above $100,000", value: "Above $100k", className: "budget-btn" },
+          { text: "❓ Not Sure", value: "Not Sure", className: "budget-btn" }
+        ]);
+      } else {
+        await sendBotMessage("Please select a field of study from the options");
+      }
+      break;
+
+    case 54: // Study budget selection
+      const studyBudgets = ["Under $20k", "$20k-$50k", "$50k-$100k", "Above $100k", "Not Sure"];
+      if (studyBudgets.includes(response)) {
+        await updateUser(socketId, conversationId, { studyBudget: response, step: 55 });
+        await sendBotMessage("When would you like to start your studies?");
+        showOptions([
+          { text: "🚀 Next Semester", value: "Next Semester", className: "time-btn" },
+          { text: "📅 Next Academic Year", value: "Next Year", className: "time-btn" },
+          { text: "⏳ In 2 Years", value: "In 2 Years", className: "time-btn" },
+          { text: "🤔 Still Deciding", value: "Still Deciding", className: "time-btn" }
+        ]);
+      } else {
+        await sendBotMessage("Please select a budget range from the options");
+      }
+      break;
+
+    case 55: // Study start time selection
+      const studyStartTimes = ["Next Semester", "Next Year", "In 2 Years", "Still Deciding"];
+      if (studyStartTimes.includes(response)) {
+        await updateUser(socketId, conversationId, { studyStartTime: response, step: 56 });
+        await sendBotMessage("How long do you want to study?");
+        showOptions([
+          { text: "📅 6 months - 1 year", value: "6m-1y", className: "duration-btn" },
+          { text: "📅 1-2 years", value: "1-2y", className: "duration-btn" },
+          { text: "📅 2-4 years", value: "2-4y", className: "duration-btn" },
+          { text: "📅 4+ years", value: "4+y", className: "duration-btn" }
+        ]);
+      } else {
+        await sendBotMessage("Please select a start time from the options");
+      }
+      break;
+
+    case 56: // Study duration selection
+      const studyDurations = ["6m-1y", "1-2y", "2-4y", "4+y"];
+      if (studyDurations.includes(response)) {
+        await updateUser(socketId, conversationId, { studyDuration: response, step: 57 });
+        
+        // Send study program email
+        socket.emit('processing-status', { 
+          isProcessing: true, 
+          message: "📧 Sending your Study Program details to our team..." 
+        });
+        
+        setTimeout(async () => {
+          const studyEmailData = {
+            name: user.name,
+            age: user.age,
+            email: user.email,
+            purpose: user.purpose,
+            qualification: user.qualification,
+            studyCountry: user.studyCountry,
+            studyLevel: user.studyLevel,
+            studyField: user.studyField,
+            studyBudget: user.studyBudget,
+            studyStartTime: user.studyStartTime,
+            studyDuration: response
+          };
+          
+          const emailSent = await sendStudyProgramEmail(studyEmailData);
+          
+          await updateUser(socketId, conversationId, { 
+            step: 58, 
+            studyEmailSent: emailSent
+          });
+          
+          socket.emit('processing-status', { isProcessing: false, message: "" });
+          
+          if (emailSent) {
+            await sendBotMessage("✅ Perfect! Your study abroad details have been sent to our team. You'll receive a confirmation email shortly!");
+          } else {
+            await sendBotMessage("⚠️ There was an issue sending your details, but don't worry - our team has your information and will contact you soon!");
+          }
+          
+          setTimeout(async () => {
+            await sendBotMessage("Would you like to proceed with our study abroad program?");
+            showOptions([
+              { text: "✅ Yes, I'm Interested", value: "Yes", className: "yes-btn" },
+              { text: "❌ Need More Information", value: "No", className: "no-btn" }
+            ], 1500);
+          }, 1000);
+        }, 500);
+        
+      } else {
+        await sendBotMessage("Please select a duration from the options");
+      }
+      break;
+
+    case 58: // Study program continuation
+      if (response === 'Yes' || response === 'No') {
+        await updateUser(socketId, conversationId, { studyProgramContinue: response, step: 59 });
+        
+        if (response === 'Yes') {
+          await sendBotMessage("Fantastic! Our study abroad counselors will contact you within 24 hours to discuss your options and next steps.");
+          setTimeout(() => showConversationSummary(socket, conversationId, user), 1500);
+        } else {
+          await sendBotMessage("No problem! Our team will send you detailed information about our study programs. Feel free to contact us when you're ready.");
+          setTimeout(() => showConversationSummary(socket, conversationId, user), 1500);
+        }
+      } else {
+        await sendBotMessage("Please select either Yes or No");
+      }
       break;
 
     default:
       await sendBotMessage("Thank you for your interest in PayanaOverseas! Our team will contact you soon.");
-      setTimeout(() => showConversationSummary(socket, conversationId, flow), 1000);
+      setTimeout(() => showConversationSummary(socket, conversationId, user), 1000);
   }
 };
 
@@ -1058,47 +1259,42 @@ io.on('connection', (socket) => {
       
       socket.join(conversationId);
       
-      const conversation = await getOrCreateConversation(conversationId, [socket.id]);
+      const user = await getOrCreateUser(conversationId, socket.id);
       
-      if (conversation) {
-        if (!conversation.participants.includes(socket.id)) {
-          await Conversation.findOneAndUpdate(
-            { conversationId },
-            { $addToSet: { participants: socket.id } }
-          );
-          conversation.participants.push(socket.id);
-        }
+      if (user) {
+        const userMessages = await getUserMessages(socket.id, conversationId);
+        socket.emit('initial-messages', userMessages);
         
-        const conversationMessages = await getConversationMessages(conversationId);
-        socket.emit('initial-messages', conversationMessages);
+        socket.emit('conversation-state', {
+          currentUser: user
+        });
         
-        socket.emit('conversation-state', conversation);
-        socket.to(conversationId).emit('conversation-state', conversation);
-        
-        if (conversationMessages.length === 0) {
-          const welcomeMessage: IChatMessage = {
+        if (userMessages.length === 0 || user.step === 0) {
+          const welcomeMessage: IUserMessage = {
             id: generateMessageId(),
             text: "Hi welcome to PayanaOverseas! How can I assist you today?",
             sender: 'bot',
-            timestamp: new Date().toISOString(),
-            conversationId: conversationId
+            timestamp: new Date().toISOString()
           };
           
-          await addMessageToConversation(welcomeMessage);
-          socket.emit('new-message', welcomeMessage);
-          
-          setTimeout(() => {
-            socket.emit('show-options', [
-              { text: "🚀 Get Started", value: "Get Started", className: "get-started-btn" }
-            ]);
-          }, 1000);
+          const saved = await addMessageToUser(socket.id, conversationId, welcomeMessage);
+          if (saved) {
+            socket.emit('new-message', welcomeMessage);
+            
+            setTimeout(() => {
+              socket.emit('show-options', [
+                { text: "🚀 Get Started", value: "Get Started", className: "get-started-btn" }
+              ]);
+            }, 1000);
+          }
         }
         
         console.log(`✅ User ${socket.id} successfully joined PayanaOverseas conversation`);
+        console.log(`👤 User ObjectId: ${user._id}, Name: ${user.name || 'Unnamed'}, Current step: ${user.step}`);
       }
       
     } catch (error) {
-      console.error('Error joining conversation:', error);
+      console.error('❌ Error joining conversation:', error);
       socket.emit('error', { message: 'Failed to join conversation' });
     }
   });
@@ -1107,24 +1303,21 @@ io.on('connection', (socket) => {
     try {
       console.log('📨 Received PayanaOverseas message:', data);
       
-      const userMessage: IChatMessage = {
+      const userMessage: IUserMessage = {
         id: generateMessageId(),
         text: data.message,
         sender: 'user',
-        timestamp: new Date().toISOString(),
-        conversationId: data.conversationId
+        timestamp: new Date().toISOString()
       };
       
-      await addMessageToConversation(userMessage);
-      io.to(data.conversationId).emit('new-message', userMessage);
-      
-      const conversation = await Conversation.findOne({ conversationId: data.conversationId }).lean();
-      if (conversation) {
-        await processConversationStep(socket, data.conversationId, data.message, conversation);
+      const saved = await addMessageToUser(socket.id, data.conversationId, userMessage);
+      if (saved) {
+        io.to(data.conversationId).emit('new-message', userMessage);
+        await processConversationStep(socket, data.conversationId, data.message, socket.id);
       }
       
     } catch (error) {
-      console.error('Error handling message:', error);
+      console.error('❌ Error handling message:', error);
       socket.emit('error', { message: 'Failed to process message' });
     }
   });
@@ -1134,24 +1327,21 @@ io.on('connection', (socket) => {
       console.log('📨 Option selected:', data);
       
       const conversationId = Array.from(socket.rooms)[1] || 'default';
-      const userMessage: IChatMessage = {
+      const userMessage: IUserMessage = {
         id: generateMessageId(),
         text: data.option,
         sender: 'user',
-        timestamp: new Date().toISOString(),
-        conversationId
+        timestamp: new Date().toISOString()
       };
       
-      await addMessageToConversation(userMessage);
-      io.to(conversationId).emit('new-message', userMessage);
-      
-      const conversation = await Conversation.findOne({ conversationId }).lean();
-      if (conversation) {
-        await processConversationStep(socket, conversationId, data.option, conversation);
+      const saved = await addMessageToUser(socket.id, conversationId, userMessage);
+      if (saved) {
+        io.to(conversationId).emit('new-message', userMessage);
+        await processConversationStep(socket, conversationId, data.option, socket.id);
       }
       
     } catch (error) {
-      console.error('Error handling option selection:', error);
+      console.error('❌ Error handling option selection:', error);
       socket.emit('error', { message: 'Failed to process option' });
     }
   });
@@ -1162,50 +1352,47 @@ io.on('connection', (socket) => {
       
       const conversationId = Array.from(socket.rooms)[1] || 'default';
       
-      await Conversation.findOneAndUpdate(
-        { conversationId },
-        { 
-          $set: { 
-            'conversationFlow.resume': data.fileName,
-            'conversationFlow.step': 7
-          }
-        }
-      );
+      const updated = await updateUser(socket.id, conversationId, { 
+        resume: data.fileName,
+        step: 7
+      });
       
-      const uploadMessage: IChatMessage = {
-        id: generateMessageId(),
-        text: `Resume uploaded: ${data.fileName}`,
-        sender: 'user',
-        timestamp: new Date().toISOString(),
-        conversationId
-      };
-      
-      await addMessageToConversation(uploadMessage);
-      socket.emit('new-message', uploadMessage);
-      
-      setTimeout(async () => {
-        const qualificationMessage: IChatMessage = {
+      if (updated) {
+        const uploadMessage: IUserMessage = {
           id: generateMessageId(),
-          text: "What is your highest qualification?",
-          sender: 'bot',
-          timestamp: new Date().toISOString(),
-          conversationId
+          text: `Resume uploaded: ${data.fileName}`,
+          sender: 'user',
+          timestamp: new Date().toISOString()
         };
         
-        await addMessageToConversation(qualificationMessage);
-        socket.emit('new-message', qualificationMessage);
-        
-        setTimeout(() => {
-          socket.emit('show-options', [
-            { text: "🎓 12th Completed", value: "12th Completed" },
-            { text: "🎓 UG Completed", value: "UG Completed" },
-            { text: "🎓 PG Completed", value: "PG Completed" }
-          ]);
-        }, 500);
-      }, 500);
+        const saved = await addMessageToUser(socket.id, conversationId, uploadMessage);
+        if (saved) {
+          socket.emit('new-message', uploadMessage);
+          
+          setTimeout(async () => {
+            const qualificationMessage: IUserMessage = {
+              id: generateMessageId(),
+              text: "What is your highest qualification?",
+              sender: 'bot',
+              timestamp: new Date().toISOString()
+            };
+            
+            await addMessageToUser(socket.id, conversationId, qualificationMessage);
+            socket.emit('new-message', qualificationMessage);
+            
+            setTimeout(() => {
+              socket.emit('show-options', [
+                { text: "🎓 12th Completed", value: "12th Completed" },
+                { text: "🎓 UG Completed", value: "UG Completed" },
+                { text: "🎓 PG Completed", value: "PG Completed" }
+              ]);
+            }, 500);
+          }, 500);
+        }
+      }
       
     } catch (error) {
-      console.error('Error handling file upload:', error);
+      console.error('❌ Error handling file upload:', error);
       socket.emit('error', { message: 'Failed to process file upload' });
     }
   });
@@ -1232,12 +1419,12 @@ io.on('connection', (socket) => {
     console.log(`❌ PayanaOverseas User disconnected: ${socket.id}. Reason: ${reason}`);
     
     try {
-      await Conversation.updateMany(
-        { participants: socket.id },
-        { $pull: { participants: socket.id } }
+      await User.updateMany(
+        { socketId: socket.id },
+        { lastActivity: new Date().toISOString() }
       );
     } catch (error) {
-      console.error('Error cleaning up user data:', error);
+      console.error('❌ Error cleaning up user data:', error);
     }
   });
 });
@@ -1250,44 +1437,112 @@ app.get('/health', (req: express.Request, res: express.Response) => {
     connections: io.engine.clientsCount,
     database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
     port: PORT,
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    collections: ['users'],
+    flows: ['work', 'study', 'ug_selection']
   });
 });
 
-app.get('/api/conversations', async (req: express.Request, res: express.Response) => {
+app.get('/api/users', async (req: express.Request, res: express.Response) => {
   try {
-    const conversations = await Conversation.find()
-      .sort({ updatedAt: -1 })
-      .limit(20)
+    const users = await User.find()
+      .select('_id name age email purpose qualification ugMajor workExperience germanLanguage studyCountry studyLevel studyField step status joinedAt messages')
+      .sort({ joinedAt: -1 })
       .lean();
-    res.json(conversations);
+    
+    const formattedUsers = users.map(user => ({
+      _id: user._id,
+      name: user.name,
+      age: user.age,
+      email: user.email,
+      purpose: user.purpose,
+      qualification: user.qualification,
+      ugMajor: user.ugMajor,
+      workExperience: user.workExperience,
+      germanLanguage: user.germanLanguage,
+      studyCountry: user.studyCountry,
+      studyLevel: user.studyLevel,
+      studyField: user.studyField,
+      step: user.step,
+      status: user.status,
+      joinedAt: user.joinedAt,
+      totalMessages: user.messages ? user.messages.length : 0
+    }));
+    
+    res.json(formattedUsers);
   } catch (error) {
-    console.error('Error fetching conversations:', error);
-    res.status(500).json({ error: 'Failed to fetch conversations' });
+    console.error('❌ Error fetching users:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
   }
 });
 
-app.get('/api/messages/:conversationId', async (req: express.Request, res: express.Response) => {
+app.get('/api/users/:id', async (req: express.Request, res: express.Response) => {
   try {
-    const { conversationId } = req.params;
-    const messages = await getConversationMessages(conversationId);
-    res.json(messages);
+    const { id } = req.params;
+    const user = await User.findById(id).lean();
+    
+    if (user) {
+      res.json(user);
+    } else {
+      res.status(404).json({ error: 'User not found' });
+    }
   } catch (error) {
-    console.error('Error fetching messages:', error);
-    res.status(500).json({ error: 'Failed to fetch messages' });
+    console.error('❌ Error fetching user:', error);
+    res.status(500).json({ error: 'Failed to fetch user' });
   }
 });
 
-// Start server on port 8000
+app.get('/api/debug', async (req: express.Request, res: express.Response) => {
+  try {
+    const userCount = await User.countDocuments();
+    const recentUsers = await User.find().limit(5).sort({ joinedAt: -1 });
+    
+    res.json({
+      status: 'PayanaOverseas Debug Info - Study & Work Flows Enabled',
+      database: 'payona_chatbot',
+      collections: {
+        users: {
+          count: userCount,
+          recent: recentUsers.map(user => ({
+            _id: user._id,
+            name: user.name,
+            age: user.age,
+            email: user.email,
+            purpose: user.purpose,
+            step: user.step,
+            status: user.status,
+            totalMessages: user.messages ? user.messages.length : 0
+          }))
+        }
+      },
+      flows: {
+        work: 'Steps 5-49 (Standard work flow, UG major flow)',
+        study: 'Steps 50-59 (Complete study abroad flow)',
+        features: ['Country selection', 'Study level', 'Field selection', 'Budget planning', 'Timeline planning']
+      },
+      connection: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+      activeConnections: io.engine.clientsCount
+    });
+  } catch (error) {
+    console.error('❌ Error in debug endpoint:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Start server
 const PORT: number = parseInt(process.env.PORT || '8000', 10);
 server.listen(PORT, () => {
   console.log(`🚀 PayanaOverseas ChatBot Server running on http://localhost:${PORT}`);
   console.log(`📊 Health check available at http://localhost:${PORT}/health`);
+  console.log(`🔧 Debug endpoint available at http://localhost:${PORT}/api/debug`);
+  console.log(`👥 Users data available at http://localhost:${PORT}/api/users`);
   console.log(`💾 Database: payona_chatbot`);
+  console.log(`🏠 Collection: users (single collection)`);
+  console.log(`📋 Flows Available: Study (Steps 50-59) & Work (Steps 5-49)`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 
-// FIXED: Graceful shutdown with Promise-based mongoose.connection.close()
+// Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('📴 Graceful shutdown initiated...');
   server.close(() => {

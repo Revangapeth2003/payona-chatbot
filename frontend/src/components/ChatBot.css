@@ -35,6 +35,12 @@
   animation: pulse 2s infinite;
 }
 
+.header-subtitle {
+  margin-top: 8px;
+  font-size: 14px;
+  opacity: 0.9;
+}
+
 @keyframes pulse {
   0%, 50%, 100% { transform: scale(1); }
   25%, 75% { transform: scale(1.1); }
@@ -356,6 +362,21 @@
   box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
   z-index: 1000;
   animation: slideInUp 0.3s ease-out;
+}
+
+/* Debug Info */
+.debug-info {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-family: monospace;
+  max-width: 300px;
+  z-index: 1000;
 }
 
 @keyframes slideInUp {
