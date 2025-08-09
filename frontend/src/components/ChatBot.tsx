@@ -17,6 +17,7 @@ const ChatBot = ({
   const [conversationState, setConversationState] = useState(null);
   const [showOptions, setShowOptions] = useState([]);
   const [processingStatus, setProcessingStatus] = useState({ isProcessing: false, message: '' });
+  const [isMinimized, setIsMinimized] = useState(false);
   
   const inputRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -162,7 +163,7 @@ const ChatBot = ({
 
     socket.emit('select-option', { 
       option: option.value, 
-      step: conversationState?.currentPersonData?.conversationFlow?.step || 0
+      step: conversationState?.currentUser?.step || 0
     });
 
     setShowOptions([]);
@@ -212,6 +213,10 @@ const ChatBot = ({
     handleTypingStart();
   }, [handleTypingStart]);
 
+  const toggleMinimize = () => {
+    setIsMinimized(!isMinimized);
+  };
+
   const isInputDisabled = () => {
     return !isConnected || processingStatus.isProcessing || showOptions.length > 0;
   };
@@ -220,134 +225,225 @@ const ChatBot = ({
     if (processingStatus.isProcessing) return processingStatus.message;
     if (showOptions.length > 0) return "Please select an option above...";
     if (!isConnected) return "Connecting to PayanaOverseas...";
-    return "Type your message...";
+    return "Type your message here...";
   };
 
-  return (
-    <div className="chat-container">
-      {/* Header */}
-      <div className="chat-header">
-        <div className="header-content">
-          <div className="company-logo">
-            <span className="logo-icon">🌍</span>
-            PayanaOverseas
-          </div>
-          <div className="connection-status">
-            <span className={`status-indicator ${isConnected ? 'connected' : 'disconnected'}`}>
-              {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
-            </span>
-          </div>
-        </div>
-        <div className="header-subtitle">
-          Study Abroad | Work in Germany | Immigration Services
-        </div>
-      </div>
-
-      {/* Messages Container */}
-      <div className="chat-messages">
-        {messages.map((message, index) => (
-          <div 
-            key={`${message.id}-${index}`}
-            className={`message ${message.sender === 'user' ? 'user-message' : 'bot-message'}`}
-            dangerouslySetInnerHTML={{ __html: message.text }}
-          />
-        ))}
-
-        {/* Processing Status */}
-        {processingStatus.isProcessing && (
-          <div className="processing-status">
-            <div className="processing-animation">
-              <div className="dot"></div>
-              <div className="dot"></div>
-              <div className="dot"></div>
-            </div>
-            <span>{processingStatus.message}</span>
-          </div>
-        )}
-
-        {/* Options */}
-        {showOptions.length > 0 && !processingStatus.isProcessing && (
-          <div className="options-container">
-            {showOptions.map((option, index) => (
-              <button
-                key={index}
-                className={`option-btn ${option.className || ''}`}
-                onClick={() => handleOptionClick(option)}
-                disabled={!isConnected}
-              >
-                {option.icon && <span className="option-icon">{option.icon}</span>}
-                {option.text}
-              </button>
-            ))}
-          </div>
-        )}
-        
-        {/* Typing indicator */}
-        {typingUsers.length > 0 && (
-          <div className="typing-indicator">
-            <div className="typing-dots">
-              <div className="dot"></div>
-              <div className="dot"></div>
-              <div className="dot"></div>
-            </div>
-            <span>
-              {typingUsers.join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...
-            </span>
-          </div>
-        )}
-        
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Chat Input */}
-      <div className="chat-input">
-        <input 
-          ref={inputRef}
-          type="text" 
-          value={inputMessage}
-          onChange={handleInputChange}
-          onKeyPress={(e) => e.key === 'Enter' && handleSendMessage(e)}
-          placeholder={getPlaceholderText()}
-          disabled={isInputDisabled()}
-        />
-        <button 
-          onClick={handleSendMessage} 
-          disabled={isInputDisabled() || !inputMessage.trim()}
-          className="send-button"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+  if (isMinimized) {
+    return (
+      <div className="chat-widget-minimized" onClick={toggleMinimize}>
+        <div className="minimized-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <path d="M8 12h8M8 8h8M8 16h5" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
           </svg>
-        </button>
+        </div>
+        <div className="minimized-content">
+          <div className="minimized-title">PayanaOverseas</div>
+          <div className="minimized-subtitle">Need help? Chat with us!</div>
+        </div>
+        <div className={`connection-indicator ${isConnected ? 'online' : 'offline'}`}></div>
       </div>
-      
-      {/* Hidden file input */}
-      <input
-        type="file"
-        ref={fileInputRef}
-        onChange={handleFileUpload}
-        accept=".pdf,.doc,.docx"
-        style={{ display: 'none' }}
-      />
+    );
+  }
 
-      {/* Connection Error */}
-      {connectionError && (
-        <div className="connection-error">
-          ⚠️ {connectionError}
+  return (
+    <div className="chat-widget">
+      <div className="chat-window">
+        {/* Clean Header */}
+        <div className="chat-header-clean">
+          <div className="header-left">
+            <div className="company-avatar-clean">
+              <div className="avatar-letter">P</div>
+            </div>
+            <div className="company-info-clean">
+              <h3 className="company-name-clean">PayanaOverseas</h3>
+              <div className="status-line">
+                <div className={`status-dot-clean ${isConnected ? 'online' : 'offline'}`}></div>
+                <span className="status-text-clean">
+                  {isConnected ? 'Online' : 'Connecting...'}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div className="header-actions">
+            <button 
+              className="minimize-btn"
+              onClick={toggleMinimize}
+              title="Minimize chat"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path d="M6 12h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+            </button>
+          </div>
         </div>
-      )}
 
-      {/* Debug Info */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="debug-info">
-          <strong>🔧 PayOna ChatBot Debug:</strong><br/>
-          <strong>Database:</strong> payona_chatbot<br/>
-          <strong>Collections:</strong> chat_messages, payona_conversations<br/>
-          <strong>Data Structure:</strong> Array of person objects<br/>
-          <strong>Connection ID:</strong> {socket?.id || 'Not connected'}<br/>
-          <strong>Current Step:</strong> {conversationState?.currentPersonData?.conversationFlow?.step || 0}
+        {/* Messages Area */}
+        <div className="chat-messages-clean">
+          <div className="conversation-starter">
+            <div className="starter-content">
+              <div className="starter-icon">🎓</div>
+              <div className="starter-text">
+                <h4>Welcome to PayanaOverseas!</h4>
+                <p>Your trusted partner for Study Abroad & Work Opportunities</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="messages-stream">
+            {messages.map((message, index) => (
+              <div 
+                key={`${message.id}-${index}`}
+                className={`message-row ${message.sender}`}
+              >
+                <div className="message-container">
+                  <div className="message-bubble-clean">
+                    <div 
+                      className="message-text"
+                      dangerouslySetInnerHTML={{ __html: message.text }}
+                    />
+                    <div className="message-meta">
+                      <span className="message-time-clean">
+                        {new Date(message.timestamp).toLocaleTimeString([], { 
+                          hour: '2-digit', 
+                          minute: '2-digit' 
+                        })}
+                      </span>
+                      {message.sender === 'user' && (
+                        <div className="message-status">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                            <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {/* Processing Status */}
+            {processingStatus.isProcessing && (
+              <div className="message-row bot">
+                <div className="message-container">
+                  <div className="processing-message">
+                    <div className="processing-indicator">
+                      <div className="pulse-dot"></div>
+                      <div className="pulse-dot"></div>
+                      <div className="pulse-dot"></div>
+                    </div>
+                    <span className="processing-label">{processingStatus.message}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Options */}
+            {showOptions.length > 0 && !processingStatus.isProcessing && (
+              <div className="message-row bot">
+                <div className="message-container">
+                  <div className="options-panel">
+                    <div className="options-header">Please choose an option:</div>
+                    <div className="options-list">
+                      {showOptions.map((option, index) => (
+                        <button
+                          key={index}
+                          className={`option-chip ${option.className || ''}`}
+                          onClick={() => handleOptionClick(option)}
+                          disabled={!isConnected}
+                        >
+                          {option.icon && <span className="chip-icon">{option.icon}</span>}
+                          <span className="chip-text">{option.text}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* Typing indicator */}
+            {typingUsers.length > 0 && (
+              <div className="message-row bot">
+                <div className="message-container">
+                  <div className="typing-indicator-clean">
+                    <div className="typing-animation-clean">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </div>
+                    <span className="typing-text">PayanaOverseas is typing...</span>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            <div ref={messagesEndRef} />
+          </div>
         </div>
-      )}
+
+        {/* Clean Input Area */}
+        <div className="chat-input-clean">
+          <div className="input-field-wrapper">
+            <input 
+              ref={inputRef}
+              type="text" 
+              value={inputMessage}
+              onChange={handleInputChange}
+              onKeyPress={(e) => e.key === 'Enter' && handleSendMessage(e)}
+              placeholder={getPlaceholderText()}
+              disabled={isInputDisabled()}
+              className="message-input-clean"
+            />
+            <div className="input-actions">
+              <button 
+                className="attachment-btn"
+                onClick={triggerFileInput}
+                disabled={isInputDisabled()}
+                title="Attach file"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66L9.64 16.2a2 2 0 01-2.83-2.83l8.49-8.49" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+              <button 
+                onClick={handleSendMessage} 
+                disabled={isInputDisabled() || !inputMessage.trim()}
+                className="send-btn-clean"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                  <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div className="input-footer">
+            <span className="powered-by">Powered by PayanaOverseas AI</span>
+          </div>
+        </div>
+
+        {/* Hidden file input */}
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileUpload}
+          accept=".pdf,.doc,.docx"
+          style={{ display: 'none' }}
+        />
+
+        {/* Error Toast */}
+        {connectionError && (
+          <div className="error-toast">
+            <div className="toast-content">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
+                <line x1="12" y1="8" x2="12" y2="12" stroke="currentColor" strokeWidth="2"/>
+                <line x1="12" y1="16" x2="12.01" y2="16" stroke="currentColor" strokeWidth="2"/>
+              </svg>
+              <span>{connectionError}</span>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
