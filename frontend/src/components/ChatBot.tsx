@@ -1,28 +1,65 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import io from 'socket.io-client';
+import io, { Socket } from 'socket.io-client';
 import './ChatBot.css';
 
-const ChatBot = ({ 
+// ✅ FIXED: Added proper TypeScript interfaces
+interface Message {
+  id: string;
+  text: string;
+  sender: 'user' | 'bot';
+  timestamp: string;
+  messageType?: 'text' | 'options' | 'summary';
+}
+
+interface ChatOption {
+  text: string;
+  value: string;
+  icon?: string;
+  className?: string;
+}
+
+interface ConversationState {
+  currentUser: {
+    step: number;
+    [key: string]: any;
+  };
+  [key: string]: any;
+}
+
+interface ProcessingStatus {
+  isProcessing: boolean;
+  message: string;
+}
+
+interface ChatBotProps {
+  userId?: string;
+  conversationId?: string;
+  serverUrl?: string;
+}
+
+const ChatBot: React.FC<ChatBotProps> = ({ 
   userId = 'student_001',
   conversationId = 'payona_overseas_chat',
   serverUrl = 'http://localhost:8000'
 }) => {
-  const [socket, setSocket] = useState(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const [connectionError, setConnectionError] = useState('');
-  const [messages, setMessages] = useState([]);
-  const [inputMessage, setInputMessage] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
-  const [typingUsers, setTypingUsers] = useState([]);
-  const [conversationState, setConversationState] = useState(null);
-  const [showOptions, setShowOptions] = useState([]);
-  const [processingStatus, setProcessingStatus] = useState({ isProcessing: false, message: '' });
-  const [isMinimized, setIsMinimized] = useState(false);
+  // ✅ FIXED: Proper state typing
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [isConnected, setIsConnected] = useState<boolean>(false);
+  const [connectionError, setConnectionError] = useState<string>('');
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [inputMessage, setInputMessage] = useState<string>('');
+  const [isTyping, setIsTyping] = useState<boolean>(false);
+  const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const [conversationState, setConversationState] = useState<ConversationState | null>(null);
+  const [showOptions, setShowOptions] = useState<ChatOption[]>([]);
+  const [processingStatus, setProcessingStatus] = useState<ProcessingStatus>({ isProcessing: false, message: '' });
+  const [isMinimized, setIsMinimized] = useState<boolean>(false);
   
-  const inputRef = useRef(null);
-  const messagesEndRef = useRef(null);
-  const fileInputRef = useRef(null);
-  const typingTimeoutRef = useRef(null);
+  // ✅ FIXED: Proper ref typing
+  const inputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -55,34 +92,35 @@ const ChatBot = ({
       }, 100);
     });
 
-    newSocket.on('disconnect', (reason) => {
+    newSocket.on('disconnect', (reason: string) => {
       console.log('❌ PayanaOverseas ChatBot disconnected:', reason);
       setIsConnected(false);
       setConnectionError(`Disconnected: ${reason}`);
     });
 
-    newSocket.on('connect_error', (error) => {
+    // ✅ FIXED: Proper error typing
+    newSocket.on('connect_error', (error: Error) => {
       console.error('❌ PayanaOverseas ChatBot connection failed:', error);
       setIsConnected(false);
       setConnectionError(`Connection failed: ${error.message}`);
     });
 
-    newSocket.on('initial-messages', (initialMessages) => {
+    newSocket.on('initial-messages', (initialMessages: Message[]) => {
       console.log('📥 PayanaOverseas: Received initial messages:', initialMessages);
       setMessages(initialMessages);
     });
 
-    newSocket.on('new-message', (newMessage) => {
+    newSocket.on('new-message', (newMessage: Message) => {
       console.log('📥 PayanaOverseas: Received new message:', newMessage);
       setMessages(prevMessages => [...prevMessages, newMessage]);
     });
 
-    newSocket.on('conversation-state', (state) => {
+    newSocket.on('conversation-state', (state: ConversationState) => {
       console.log('📊 PayanaOverseas: Conversation state updated:', state);
       setConversationState(state);
     });
 
-    newSocket.on('typing-status', (status) => {
+    newSocket.on('typing-status', (status: { userId: string; isTyping: boolean }) => {
       console.log('⌨️ PayanaOverseas: Typing status:', status);
       
       if (status.userId !== userId) {
@@ -94,12 +132,12 @@ const ChatBot = ({
       }
     });
 
-    newSocket.on('show-options', (options) => {
+    newSocket.on('show-options', (options: ChatOption[]) => {
       console.log('📋 PayanaOverseas: Show options:', options);
       setShowOptions(options);
     });
 
-    newSocket.on('processing-status', (status) => {
+    newSocket.on('processing-status', (status: ProcessingStatus) => {
       console.log('⚙️ PayanaOverseas: Processing status:', status);
       setProcessingStatus(status);
     });
@@ -109,7 +147,114 @@ const ChatBot = ({
       triggerFileInput();
     });
 
-    newSocket.on('error', (error) => {
+    // ✅ CORRECTED: Improved fetch-message event handler
+    newSocket.on('fetch-message', async (data: { path: string; replacements?: any }) => {
+      console.log('📨 FRONTEND: Received fetch-message event:', data);
+      
+      try {
+        const { path, replacements } = data;
+        
+        // ✅ FIX 1: Correct API URL construction
+        let apiUrl = `${serverUrl}/api/messages/${path}`;
+        
+        // ✅ FIX 2: Improved query parameter handling with validation
+        if (replacements && typeof replacements === 'object' && Object.keys(replacements).length > 0) {
+          const queryParam = encodeURIComponent(JSON.stringify(replacements));
+          apiUrl += `?replacements=${queryParam}`;
+        }
+        
+        console.log('🔗 FRONTEND: Making API call to:', apiUrl);
+        
+        // ✅ FIX 3: Enhanced fetch with proper error handling
+        const response = await fetch(apiUrl, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          // ✅ FIX 4: Add timeout to prevent hanging requests
+          signal: AbortSignal.timeout(10000) // 10 second timeout
+        });
+        
+        console.log('📡 FRONTEND: API Response status:', response.status);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const messageData = await response.json();
+        console.log('📦 FRONTEND: API Response data:', messageData);
+        
+        // ✅ FIX 5: Enhanced message validation
+        if (messageData && messageData.message && typeof messageData.message === 'string' && messageData.message.trim()) {
+          // ✅ FIX 6: Create bot message with proper structure
+          const botMessage: Message = {
+            id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            text: messageData.message,
+            sender: 'bot',
+            timestamp: new Date().toISOString(),
+            messageType: 'text'
+          };
+          
+          console.log('✅ FRONTEND: Adding bot message to UI:', botMessage.text);
+          
+          // ✅ FIX 7: Prevent duplicate messages
+          setMessages(prevMessages => {
+            // Check if message already exists to prevent duplicates
+            const isDuplicate = prevMessages.some(msg => 
+              msg.text === botMessage.text && 
+              msg.sender === 'bot' && 
+              Math.abs(new Date(msg.timestamp).getTime() - new Date(botMessage.timestamp).getTime()) < 1000
+            );
+            
+            if (isDuplicate) {
+              console.log('⚠️ FRONTEND: Duplicate message detected, skipping');
+              return prevMessages;
+            }
+            
+            const newMessages = [...prevMessages, botMessage];
+            console.log('📝 FRONTEND: Updated messages array length:', newMessages.length);
+            return newMessages;
+          });
+          
+        } else {
+          console.error('❌ FRONTEND: Invalid message data received:', messageData);
+          throw new Error(`No valid message content received from API. Response: ${JSON.stringify(messageData)}`);
+        }
+        
+      } catch (error) {
+        console.error('❌ FRONTEND: Error in fetch-message handler:', error);
+        
+        // ✅ FIX 8: Better error handling with specific error types
+        let errorText = '';
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorName = error instanceof Error ? error.name : 'Error';
+        
+        if (errorName === 'AbortError') {
+          errorText = `⏱️ Request timeout: Could not fetch message for "${data.path}" (took too long)`;
+        } else if (errorMessage.includes('HTTP 404')) {
+          errorText = `❌ Message not found: "${data.path}" does not exist in message.json`;
+        } else if (errorMessage.includes('HTTP 500')) {
+          errorText = `🔧 Server error: Problem reading message.json file`;
+        } else if (errorMessage.includes('Failed to fetch')) {
+          errorText = `🌐 Network error: Cannot connect to server at ${serverUrl}`;
+        } else {
+          errorText = `🔧 Error: Could not fetch message for "${data.path}". ${errorMessage}`;
+        }
+        
+        const errorMessageObj: Message = {
+          id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          text: errorText,
+          sender: 'bot',
+          timestamp: new Date().toISOString(),
+          messageType: 'text'
+        };
+        
+        setMessages(prevMessages => [...prevMessages, errorMessageObj]);
+      }
+    });
+
+    newSocket.on('error', (error: { message: string }) => {
       console.error('❌ PayanaOverseas socket error:', error);
       setConnectionError(error.message);
     });
@@ -118,6 +263,9 @@ const ChatBot = ({
 
     return () => {
       console.log('🧹 Cleaning up PayanaOverseas ChatBot...');
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
       newSocket.disconnect();
       setIsConnected(false);
       setMessages([]);
@@ -126,7 +274,8 @@ const ChatBot = ({
     };
   }, [conversationId, serverUrl, userId]);
 
-  const handleSendMessage = useCallback((e) => {
+  // ✅ FIXED: Proper event handler typing
+  const handleSendMessage = useCallback((e: React.FormEvent) => {
     e.preventDefault();
     
     if (!inputMessage.trim()) return;
@@ -139,26 +288,28 @@ const ChatBot = ({
     const messageData = {
       conversationId,
       message: inputMessage.trim(),
-      sender: 'user',
+      sender: 'user' as const,
       timestamp: new Date().toISOString()
     };
 
-    socket.emit('send-message', messageData);
-    setInputMessage('');
-    setShowOptions([]);
-    
-    if (isTyping) {
-      socket.emit('typing-stop', { conversationId, userId });
-      setIsTyping(false);
-    }
-    
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current);
-      typingTimeoutRef.current = null;
+    if (socket) {
+      socket.emit('send-message', messageData);
+      setInputMessage('');
+      setShowOptions([]);
+      
+      if (isTyping) {
+        socket.emit('typing-stop', { conversationId, userId });
+        setIsTyping(false);
+      }
+      
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
     }
   }, [inputMessage, conversationId, userId, isTyping, isConnected, socket]);
 
-  const handleOptionClick = useCallback((option) => {
+  const handleOptionClick = useCallback((option: ChatOption) => {
     if (!isConnected || !socket) return;
 
     socket.emit('select-option', { 
@@ -173,7 +324,8 @@ const ChatBot = ({
     fileInputRef.current?.click();
   }, []);
 
-  const handleFileUpload = useCallback((e) => {
+  // ✅ FIXED: Proper event typing
+  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && isConnected && socket) {
       const fileName = file.name;
@@ -182,7 +334,7 @@ const ChatBot = ({
       reader.onload = () => {
         socket.emit('upload-file', {
           fileName: fileName,
-          fileData: reader.result
+          fileData: reader.result as string
         });
       };
       reader.readAsDataURL(file);
@@ -208,7 +360,8 @@ const ChatBot = ({
     }, 3000);
   }, [conversationId, userId, isTyping, isConnected, socket]);
 
-  const handleInputChange = useCallback((e) => {
+  // ✅ FIXED: Proper event typing
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setInputMessage(e.target.value);
     handleTypingStart();
   }, [handleTypingStart]);
@@ -389,7 +542,7 @@ const ChatBot = ({
               type="text" 
               value={inputMessage}
               onChange={handleInputChange}
-              onKeyPress={(e) => e.key === 'Enter' && handleSendMessage(e)}
+              onKeyPress={(e: React.KeyboardEvent) => e.key === 'Enter' && handleSendMessage(e)}
               placeholder={getPlaceholderText()}
               disabled={isInputDisabled()}
               className="message-input-clean"

@@ -1,0 +1,98 @@
+{
+  "welcome": {
+    "initial": "Hi welcome to PayanaOverseas! How can I assist you today?",
+    "getStarted": "Great! Let's get started. Please enter your full name:"
+  },
+  "prompts": {
+    "name": "Great! Let's get started. Please enter your full name:",
+    "nameSuccess": "Thanks {name}! What's your age?",
+    "age": "Please share your email address:",
+    "email": "Are you looking to Study or Work abroad?",
+    "passport": "Do you have a valid passport?",
+    "resume": "Do you have a resume to upload?",
+    "qualification": "What is your highest qualification?",
+    "ugMajor": "What is your UG major?",
+    "workExperience": "Do you have any work experience?",
+    "experienceYears": "How many years of experience?",
+    "workExperienceGeneral": "How many years of work experience do you have?",
+    "interestedCategories": "Are you interested in any of these categories?",
+    "germanLanguage": "Are you ready to learn the German language?",
+    "germanLanguageUG": "Are you willing to learn German language?",
+    "germanLanguageDentist": "Are you willing to learn German language and ready to clear FSP and KP exams?",
+    "continueProgram": "Can you continue with this program?",
+    "continueProgramUG": "Please kindly check your mail. Can you continue with this program?",
+    "programStart": "When can you kick start your program?",
+    "studyCountry": "Perfect! Which country would you like to study in?",
+    "studyLevel": "Great choice! What level of study are you interested in?",
+    "studyField": "Excellent! What field would you like to study?",
+    "studyBudget": "What's your budget range for studying abroad?",
+    "studyStartTime": "When would you like to start your studies?",
+    "studyDuration": "How long do you want to study?",
+    "studyProgramContinue": "Would you like to proceed with our study abroad program?"
+  },
+  "validation": {
+    "nameInvalid": "Please enter a valid name (at least 2 letters, letters and spaces only)",
+    "ageInvalid": "Please enter a valid age (between 16-65 years)",
+    "emailInvalid": "Please enter a valid email address (e.g., example@gmail.com)",
+    "selectStudyOrWork": "Please select either Study or Work",
+    "selectYesOrNo": "Please select either Yes or No",
+    "selectQualification": "Please select a qualification from the options",
+    "selectExperience": "Please select an experience level",
+    "selectUgMajor": "Please select a UG major from the options",
+    "selectCountry": "Please select a country from the options",
+    "selectStudyLevel": "Please select a study level from the options",
+    "selectStudyField": "Please select a field of study from the options",
+    "selectBudget": "Please select a budget range from the options",
+    "selectStartTime": "Please select a start time from the options",
+    "selectDuration": "Please select a duration from the options"
+  },
+  "processing": {
+    "sendingGermanEmail": "📧 Sending your German Program details to our team...",
+    "sendingUGEmail": "📧 Sending your UG Program details to our team...",
+    "sendingStudyEmail": "📧 Sending your Study Program details to our team..."
+  },
+  "success": {
+    "emailSent": "✅ Great! Your details have been sent to our team. You'll receive a confirmation email shortly!",
+    "ugEmailSent": "✅ Great! Your details have been sent to our team. You'll receive a confirmation email shortly!",
+    "studyEmailSent": "✅ Perfect! Your study abroad details have been sent to our team. You'll receive a confirmation email shortly!",
+    "studyProceed": "Fantastic! Our study abroad counselors will contact you within 24 hours to discuss your options and next steps."
+  },
+  "errors": {
+    "emailFailed": "⚠️ There was an issue sending your details, but don't worry - our team has your information and will contact you soon!",
+    "ugEmailFailed": "⚠️ There was an issue sending your details, but don't worry - our team has your information and will contact you soon!"
+  },
+  "responses": {
+    "noPassport": "You have some time to make financial setups. Now you have to start learning German language now.",
+    "noPassportContinue": "Ready to start your journey?",
+    "noContinueProgram": "No problem! Our team will still contact you to discuss other opportunities that might interest you.",
+    "noUGProgram": "No problem! Please enter your email correctly and we'll send you alternative opportunities.",
+    "noStudyProgram": "No problem! Our team will send you detailed information about our study programs. Feel free to contact us when you're ready.",
+    "defaultResponse": "Thank you for your interest in PayanaOverseas! Our team will contact you soon."
+  },
+  "summary": {
+    "header": "📋 Summary of Your Information",
+    "contactImmediate": "📞 For immediate assistance: <strong>+91 9003619777</strong>",
+    "thankYouStudy": "🎉 Thank you {name}! Your details have been sent to our team.<br><br>📞 For immediate assistance: <strong>+91 9003619777</strong><br><br>🌟 We're excited to help you achieve your dreams of studying abroad!",
+    "thankYouWork": "🎉 Thank you {name}! Your details have been sent to our team.<br><br>📞 For immediate assistance: <strong>+91 9003619777</strong><br><br>🌟 We're excited to help you achieve your dreams of working abroad!"
+  },
+  "qualificationOptions": {
+    "study": "Excellent choice! What is your highest qualification?"
+  },
+  "fileUpload": {
+    "resumeUploaded": "📄 Resume uploaded successfully: {fileName}",
+    "resumeRequired": "Please upload your resume to continue."
+  },
+  "workFlow": {
+    "construction": "Great choice! Construction work in Germany offers excellent opportunities.",
+    "hotelManagement": "Excellent! Hotel management roles are in high demand internationally.",
+    "healthcare": "Perfect! Healthcare professionals are highly valued worldwide.",
+    "technical": "Wonderful! Technical skills are always in demand globally."
+  },
+  "studyFlow": {
+    "engineering": "Engineering is an excellent choice for international studies!",
+    "business": "Business studies will open many international opportunities!",
+    "medicine": "Medicine is a highly respected field worldwide!",
+    "arts": "Arts programs offer creative opportunities internationally!",
+    "science": "Science fields have tremendous global opportunities!"
+  }
+}
